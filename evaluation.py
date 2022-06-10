@@ -133,7 +133,7 @@ def find_special_matrices(codebook_path):
     permutations = list(itertools.permutations(list(range(codebook.shape[0]))))
     cnt = 0
     possible_matrices = {}
-    print(len(permutations))
+    print(len(permutations), "number of combinations of row orderings")
     nones = 0
     for perm in permutations:
         codebook_copy = codebook[perm, :]
@@ -142,7 +142,7 @@ def find_special_matrices(codebook_path):
             continue
         nones += len(matrices)
         possible_matrices[perm] = matrices
-    print(nones)
+    print(nones, "number of possible submatrices")
     return possible_matrices
 
 
@@ -153,8 +153,14 @@ if __name__ == '__main__':
     # reshape based on codebook
     # img = img[markers['marker_name'].isin(codebook.index)]
     # print("image shape", img.shape)
-
     x = find_special_matrices('codebook.csv')
+    y = [[k,v] for k,v in x.items()][0]
+    print('Row ordering: ', y[0])
+    print('Possible submatrices and the column numbers they are associated with: ')
+    for i in y[1]:
+        print("column numbers:", i[1])
+        print("submatrix: \n", i[0])
+
 
     # x = img.copy()
     # print(elementwise_accuracy(img, x))
