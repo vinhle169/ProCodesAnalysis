@@ -2,6 +2,7 @@ from typing import List, Tuple
 
 from utils import *
 import itertools
+from collections import Counter
 from skimage.metrics import structural_similarity as ssim
 
 def elementwise_accuracy(img_1, img_2, deviation=0.001):
@@ -55,95 +56,158 @@ def compare_images(imageA, imageB):
 
     print(f"MSE: {m}, SSIM: {s}")
 
+class identifiable_submatrices:
 
-def find_special_matrices(codebook_path):
-    '''
-    Find all possible special matrices given codebook
-    Special matrix in this case is a 6 x 4 matrix where:
-    Condition 1:
-        First 3 rows represent a smaller 3 x 4 subset where each 3 x 1 column is a different permutation
-        (Can be in any order)
-            [[1 0 1 1]
-             [0 1 1 1]
-             [1 1 0 1]]
-    Condition 2:
-        Last 3 rows represent 3/4th of an identity
-            [[1 0 0 1]
-             [0 1 0 1]
-             [0 0 1 1]]
-    :param codebook_path:
-    :return: list of all possible matrices that fulfill above constraints
-    '''
-    def check_for_matrix(matrix):
-        mini = matrix[0:3]
-        perm_dict = {(1,1,0):[], (0,1,1):[], (1,0,1):[], (1,1,1):[]}
-        keys = set(perm_dict.keys())
-        for i in range(mini.shape[1]):
-            if tuple(mini[:,i]) in keys:
-                perm_dict[tuple(mini[:,i])].append(i)
-        # Does not satisfy is missing part of condition 1
-        if [] in perm_dict.values():
-            return None
-        else:
-            cnt=0
-            combs: List[(Tuple[int, int, int], List)] = sorted(list(perm_dict.items()), key=lambda x: len(x[1]))
-            matrices = []
-            # get all combinations of matrices that are possible
-            for i in combs[0][1]:
-                col_i = matrix[:,i]
-                idx_i = np.argmax(col_i[3:])
-                if tuple(col_i[0:3]) == (1, 1, 1):
-                    idx_i = 4
-                chk  = [idx_i]
+    def __init__(self, codebook_path):
+        self.path = codebook_path
+        self.codebook = pd.read_csv(codebook_path, sep='.', index_col=0)
+        self.idx_to_col = {i:self.codebook.columns[i] for i in range(len(self.codebook.columns))}
+        self.idx_to_row = {i: self.codebook.index[i] for i in range(len(self.codebook.index))}
+        self.codebook = pd.read_csv(codebook_path, sep='.', index_col=0).to_numpy()
+        self.identifiable_submatrices(self.codebook)
+        self.prettify_matrices()
 
-                for j in combs[1][1]:
-                    col_j = matrix[:, j]
-                    idx_j = np.argmax(col_j[3:])
-                    if tuple(col_j[0:3]) == (1, 1, 1):
-                        idx_j = 4
-                    if idx_j in chk:
-                        continue
-                    else: chk2 = chk + [idx_j]
+    def identifiable_submatrices(self, codebook):
+        '''
+        Find all possible special matrices given codebook
+        Special matrix in this case is a 6 x 4 matrix where:
+        Condition 1:
+            First 3 rows represent a smaller 3 x 4 subset where each 3 x 1 column is a different permutation
+            (Can be in any order)
+                [[1 0 1 1]
+                 [0 1 1 1]
+                 [1 1 0 1]]
+        Condition 2:
+            Last 3 rows represent 3/4th of an identity
+                [[1 0 0 1]
+                 [0 1 0 1]
+                 [0 0 1 1]]
+        :param codebook_path:
+        :return: list of all possible matrices that fulfill above constraints
+        '''
+        def get_index_identity(column):
+            '''
+            Get the index of the identity portion of the column (condition 2 from above)
+            :param column:
+            :return:
+            '''
+            if tuple(column[0:3]) == (1, 1, 1):
+                return 4
+            return np.argmax(column[3:])
 
-                    for k in combs[2][1]:
-                        col_k = matrix[:, k]
-                        idx_k = np.argmax(col_k[3:])
-                        if tuple(col_k[0:3]) == (1, 1, 1):
-                            idx_k = 4
-                        if idx_k in chk2:
+        def check_for_matrix(matrix):
+            '''
+            Finds all the submatrices in given matrix
+            :param matrix:
+            :return:
+            '''
+            mini = matrix[0:3]
+            perm_dict = {(1,1,0):[], (0,1,1):[], (1,0,1):[], (1,1,1):[]}
+            keys = set(perm_dict.keys())
+            for i in range(mini.shape[1]):
+                if tuple(mini[:,i]) in keys:
+                    perm_dict[tuple(mini[:,i])].append(i)
+            # Does not satisfy is missing part of condition 1
+            if [] in perm_dict.values():
+                return None
+            else:
+                combs: List[(Tuple[int, int, int], List)] = sorted(list(perm_dict.items()), key=lambda x: len(x[1]))
+                matrices = []
+                # get all combinations of matrices that are possible
+                for i in combs[0][1]:
+                    col_i = matrix[:,i]
+                    idx_i = get_index_identity(col_i)
+                    chk  = [idx_i]
+
+                    for j in combs[1][1]:
+                        col_j = matrix[:, j]
+                        idx_j = get_index_identity(col_j)
+                        if idx_j in chk:
                             continue
-                        else: chk3 = chk2 + [idx_k]
+                        else: chk2 = chk + [idx_j]
 
-                        for l in combs[3][1]:
-                            cnt += 1
-                            col_l = matrix[:, l]
-                            if tuple(col_l[0:3]) == (1, 1, 1):
-                                idx_l = 4
-                            idx_l = np.argmax(col_l[3:])
-                            if idx_l in chk3:
+                        for k in combs[2][1]:
+                            col_k = matrix[:, k]
+                            idx_k = get_index_identity(col_k)
+                            if idx_k in chk2:
                                 continue
-                            else:
-                                cols = np.array([col_i, col_j, col_k, col_l]).T
-                                matrices.append([cols, [i,j,k,l]])
-            return matrices
+                            else: chk3 = chk2 + [idx_k]
 
+                            for l in combs[3][1]:
+                                col_l = matrix[:, l]
+                                idx_l = get_index_identity(col_l)
+                                if idx_l in chk3:
+                                    continue
+                                else:
+                                    cols = np.array([col_i, col_j, col_k, col_l]).T
+                                    matrices.append([cols, [i,j,k,l]])
+                return matrices
+        # getting the permutations of all the possible row orderings
+        permutations = list(itertools.permutations(list(range(codebook.shape[0]))))
+        possible_matrices = {}
+        print(len(permutations), "number of combinations of row orderings")
+        nones = 0
+        for perm in permutations:
+            codebook_copy = codebook[perm, :]
+            matrices = check_for_matrix(codebook_copy)
+            if not matrices:
+                continue
+            nones += len(matrices)
+            possible_matrices[perm] = matrices
+        print(nones, "number of possible submatrices")
+        self.possible_matrices = possible_matrices
+        return possible_matrices
 
+    def prettify_matrices(self):
+        '''
+        Make sure the matrix appears correctly
+        [[x x x 1]
+        [x x x 1]
+        [x x x 1]
+        [1 x x 0]
+        [x 1 x 0]
+        [x x 1 0]
+        :return:
+        '''
 
-    codebook = pd.read_csv('codebook.csv', sep='.', index_col=0).to_numpy()
-    permutations = list(itertools.permutations(list(range(codebook.shape[0]))))
-    cnt = 0
-    possible_matrices = {}
-    print(len(permutations), "number of combinations of row orderings")
-    nones = 0
-    for perm in permutations:
-        codebook_copy = codebook[perm, :]
-        matrices = check_for_matrix(codebook_copy)
-        if matrices == None:
-            continue
-        nones += len(matrices)
-        possible_matrices[perm] = matrices
-    print(nones, "number of possible submatrices")
-    return possible_matrices
+        # returns new matrix without the empty row and the row index that was deleted
+        def delete_empty(mat, row_ordering):
+            tf = np.all(mat == 0, axis = 1)
+            empty = np.argmax(tf)
+            tf = np.invert(tf)
+            new_mat = mat[tf]
+            row_ordering.pop(empty)
+            return new_mat, tuple(row_ordering)
+
+        # returns new matrix and the new shifted column order
+        def shift_matrices(mat, cols):
+            cols = np.array(cols)
+            copy_mat = np.copy(mat).T
+            new_positions = [0 for i in range(len(copy_mat))]
+            for i in range(len(copy_mat)):
+                if tuple(copy_mat[i][0:3]) == (1,1,1):
+                    new_positions[3] = i
+                else:
+                    new_positions[np.argmax(copy_mat[i][3:])] = i
+            new_mat = copy_mat[new_positions,:].T
+            new_cols = cols[new_positions]
+            return new_mat, new_cols
+
+        matrices = self.possible_matrices
+        self.clean_matrices = {}
+        for row_ordering, vals in self.possible_matrices.items():
+            m = vals[0][0]
+            c = vals[0][1]
+            mat, row_order = delete_empty(m, list(row_ordering))
+            new_mat, col_order = shift_matrices(mat, c)
+            self.clean_matrices.setdefault(row_order, list())
+            # check for repeats
+            flag = 0
+            for elem in self.clean_matrices[row_order]:
+                if Counter(elem[1]) == Counter(col_order):
+                    flag = 1
+            if flag == 0:
+                self.clean_matrices[row_order].append([new_mat, col_order])
 
 
 if __name__ == '__main__':
@@ -153,27 +217,14 @@ if __name__ == '__main__':
     # reshape based on codebook
     # img = img[markers['marker_name'].isin(codebook.index)]
     # print("image shape", img.shape)
-    x = find_special_matrices('codebook.csv')
-    y = [[k,v] for k,v in x.items()][0]
+    x = identifiable_submatrices('codebook.csv')
+    y = [[k,v] for k,v in x.clean_matrices.items()][5]
     print('Row ordering: ', y[0])
+    print('Row names:', [x.idx_to_row[j] for j in y[0]])
     print('Possible submatrices and the column numbers they are associated with: ')
     for i in y[1]:
         print("column numbers:", i[1])
+        print("column names:", [x.idx_to_col[j] for j in i[1]])
         print("submatrix: \n", i[0])
-
-
-    # x = img.copy()
-    # print(elementwise_accuracy(img, x))
-    # noise = np.random.normal(0, 0.1, img.shape)
-    # x += noise
-    # compare_images(img, x)
-    # max_components = 3
-    # thr_factor = 0.8
-    # z = matching_pursuit(x, A, max_components, thr_factor)
-    # cm = plt.get_cmap('tab20')
-    # cm.set_bad('k')
-    # plt.figure(figsize=(12, 12))
-    # plt.gca().matshow(np.where(z.max(0) == 0, np.nan, z.argmax(0)), cmap=cm)
-    # plt.show()
 
 
