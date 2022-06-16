@@ -79,9 +79,9 @@ class identifiable_submatrices:
                  [1 1 0 1]]
         Condition 2:
             Last 3 rows represent 3/4th of an identity
-                [[1 0 0 1]
-                 [0 1 0 1]
-                 [0 0 1 1]]
+                [[1 0 0 0]
+                 [0 1 0 0]
+                 [0 0 1 0]]
         :param codebook_path:
         :return: list of all possible matrices that fulfill above constraints
         '''
