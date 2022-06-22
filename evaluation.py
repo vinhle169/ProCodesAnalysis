@@ -56,6 +56,7 @@ def compare_images(imageA, imageB):
 
     print(f"MSE: {m}, SSIM: {s}")
 
+
 class identifiable_submatrices:
 
     def __init__(self, codebook_path):
