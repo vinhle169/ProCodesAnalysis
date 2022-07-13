@@ -155,6 +155,7 @@ class identifiable_submatrices:
                 continue
             nones += len(matrices)
             possible_matrices[perm] = matrices
+            break
         print(nones, "number of possible submatrices")
         self.possible_matrices = possible_matrices
         return possible_matrices
@@ -197,35 +198,20 @@ class identifiable_submatrices:
         matrices = self.possible_matrices
         self.clean_matrices = {}
         for row_ordering, vals in self.possible_matrices.items():
-            m = vals[0][0]
-            c = vals[0][1]
-            mat, row_order = delete_empty(m, list(row_ordering))
-            new_mat, col_order = shift_matrices(mat, c)
-            self.clean_matrices.setdefault(row_order, list())
-            # check for repeats
-            flag = 0
-            for elem in self.clean_matrices[row_order]:
-                if Counter(elem[1]) == Counter(col_order):
-                    flag = 1
-            if flag == 0:
-                self.clean_matrices[row_order].append([new_mat, col_order])
+            for v in vals:
+                m = v[0]
+                c = v[1]
+                mat, row_order = delete_empty(m, list(row_ordering))
+                new_mat, col_order = shift_matrices(mat, c)
+                self.clean_matrices.setdefault(row_order, list())
+                # check for repeats
+                flag = 0
+                for elem in self.clean_matrices[row_order]:
+                    if Counter(elem[1]) == Counter(col_order):
+                        flag = 1
+                if flag == 0:
+                    self.clean_matrices[row_order].append([new_mat, col_order])
 
 
 if __name__ == '__main__':
-    # img = load('F000_max.tif')
-    # markers = pd.read_csv('markers.csv')
-    # print("image shape", img.shape)
-    # reshape based on codebook
-    # img = img[markers['marker_name'].isin(codebook.index)]
-    # print("image shape", img.shape)
-    x = identifiable_submatrices('codebook.csv')
-    y = [[k,v] for k,v in x.clean_matrices.items()][5]
-    print('Row ordering: ', y[0])
-    print('Row names:', [x.idx_to_row[j] for j in y[0]])
-    print('Possible submatrices and the column numbers they are associated with: ')
-    for i in y[1]:
-        print("column numbers:", i[1])
-        print("column names:", [x.idx_to_col[j] for j in i[1]])
-        print("submatrix: \n", i[0])
-
-
+    pass
