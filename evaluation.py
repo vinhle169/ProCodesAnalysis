@@ -1,11 +1,13 @@
 from typing import List, Tuple
 
+import numpy as np
+
 from utils import *
 import itertools
 from collections import Counter
 from skimage.metrics import structural_similarity as ssim
 
-def elementwise_accuracy(img_1, img_2, deviation=0.001):
+def elementwise_accuracy(img_1, img_2, ignore_zeros=False, deviation=0.001):
     '''
     Calculates Error between two images elementwise
     :param img_1:
@@ -13,10 +15,24 @@ def elementwise_accuracy(img_1, img_2, deviation=0.001):
     :param deviation:
     :return: element wise accuracy between two images as a float
     '''
+    print(img_1.shape, img_2.shape)
     assert img_1.shape == img_2.shape
-    img_diff = np.abs(img_1 - img_2)
-    rounded_diff = np.where(img_diff <= deviation, 1, 0)
-    return np.sum(rounded_diff)/img_diff.size
+
+    if ignore_zeros:
+        img_1, img_2 = img_1.ravel(), img_2.ravel()
+        nonzero_1 = set(np.flatnonzero(img_1))
+        nonzero_2 = set(np.flatnonzero(img_2))
+        nonzero = nonzero_1.intersection(nonzero_2)
+        diffs = [np.abs(img_1[i] - img_2[i]) for i in nonzero]
+        diffs = np.array(diffs)
+        rounded_diff = np.where(diffs <= deviation, 1, 0)
+        return np.sum(rounded_diff) / len(nonzero_1)
+    else:
+        img_diff = np.abs(img_1 - img_2)
+        rounded_diff = np.where(img_diff <= deviation, 1, 0)
+        return np.sum(rounded_diff)/img_diff.size
+
+
 
 
 def mse(img_1, img_2):
@@ -30,17 +46,17 @@ def mse(img_1, img_2):
     return diff / img_1.size
 
 
-def ssim_err(img_1, img_2, img=False):
+def ssim_err(img_1, img_2, channel_axis=None, img=False):
     '''
     Structural Similarity Index
     :param img_1:
     :param img_2:
-    :return: List containing  SSIM and Image of it if wanted
+    :return: List containing  SSIM and Image of it if wanted, SSIM is a float [0,1]
     '''
-    # need to reshape
+    # need to reshape so that channels are at the end
     img1 = np.moveaxis(img_1.copy(), 0, -1)
     img2 = np.moveaxis(img_2.copy(), 0, -1)
-    index = ssim(img1, img2, data_range=1, channel_axis=-1, full=img)
+    index = ssim(img1, img2, data_range=1, channel_axis=channel_axis, full=img)
     return [index]
 
 
@@ -155,7 +171,6 @@ class identifiable_submatrices:
                 continue
             nones += len(matrices)
             possible_matrices[perm] = matrices
-            break
         print(nones, "number of possible submatrices")
         self.possible_matrices = possible_matrices
         return possible_matrices
@@ -215,3 +230,7 @@ class identifiable_submatrices:
 
 if __name__ == '__main__':
     pass
+
+
+
+

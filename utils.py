@@ -9,7 +9,7 @@ from skimage.filters import threshold_otsu, rank
 def load_tif(path):
     img = imread(path)
     # equalizes/normalizes channels mark
-    img = img.astype(np.float32) / img.max((1, 2), keepdims=True)
+    img = img.astype(np.float32) / img.max((-1, -2), keepdims=True)
     return img
 
 
@@ -33,14 +33,19 @@ def color_blobs(img, blob_radius=1, num_blobs=1):
     '''
     def get_neighbors(img, index):
         # up, down, left, right: do this later
-        pass
+        i, j = index[0], index[1]
+        print(img[i][j], 'center')
+        blob = img[i - blob_radius:i + blob_radius + 1, j - blob_radius:j + blob_radius + 1]
+        return blob
+
     possible_blobs = np.transpose(np.nonzero(img > 0))
     used = set()
-    print(np.array([2, 752]) in possible_blobs)
     for i in range(num_blobs):
         idx = np.random.randint(0, possible_blobs.shape[0])
         blob_index = possible_blobs[idx]
-        used.add(blob_index)
+        blob = get_neighbors(img, blob_index)
+        print(blob)
+        used.add(tuple(blob_index))
     # return coordinates that are in the blob(s)
     return used
 
@@ -49,15 +54,17 @@ def color_blobs(img, blob_radius=1, num_blobs=1):
 def matching_pursuit(x, A, max_iters, thr=1):
     '''
     :param x: Image
-    :param A: codebook values transposed (7 x 19)
+    :param A: codebook values transposed
     :param max_iters: number of iterations aka the number of components
     :param thr: scaling factor to otsu threshold
-    :return:
+    :return z: deconvolution of the image
     '''
     # this is necessary if doing more than one iteration, for the residuals update to work
+    print(A)
     A = A / np.linalg.norm(A, axis=1)[:, None]
+    print(A)
     z = np.zeros((A.shape[0], *x.shape[1:]))
-
+    print(A.shape, x.shape)
     x = x.copy()  # initialize "residuals" to the image itself
 
     # mask for whether each pixel has converged or not; we already know background's zero
@@ -85,15 +92,4 @@ def matching_pursuit(x, A, max_iters, thr=1):
     return z
 
 if __name__ == '__main__':
-    x = load_tif('F000_max.tif')
-    markers = pd.read_csv('markers.csv')
-    A = load_codebook('codebook.csv', values=False)
-    x = x[markers['marker_name'].isin(A.index)]
-    A = A.values.copy().T
-    z = matching_pursuit(x, A, 3)
-    print(z.shape)
-    test_img = z[1]
-    print(test_img.shape)
-    print(np.min(test_img))
-    print(np.max(test_img))
-    color_blobs(test_img, 2)
+    display_codebook('codebook.csv')
