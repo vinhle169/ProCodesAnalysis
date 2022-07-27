@@ -1,4 +1,5 @@
 import os
+import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -6,12 +7,22 @@ import seaborn as sns
 from imageio import volread as imread
 from skimage.filters import threshold_otsu, rank
 
+def random_channel(image, multi_image=False):
+    # assuming channels in the 1st dimension
+    shape = image.shape
+    channel_i = np.random.randint(0, shape[0])
+    if torch.is_tensor(image):
+        y = image.clone().detach()
+        im = np.delete(y, channel_i, 0)
+    else:
+        im = np.delete(image.copy(), channel_i, 0)
+    return image[channel_i,:,:], im, channel_i
+
 def load_tif(path):
     img = imread(path)
     # equalizes/normalizes channels mark
     img = img.astype(np.float32) / img.max((-1, -2), keepdims=True)
     return img
-
 
 def load_codebook(path, values=True):
     codebook = pd.read_csv(path, sep='.', index_col=0)
@@ -19,11 +30,10 @@ def load_codebook(path, values=True):
         codebook = codebook.values.copy().T
     return codebook
 
-def display_codebook(path):
-    codebook = pd.read_csv(path, sep='.', index_col=0)
-    sns.heatmap(codebook)
-    plt.show()
-
+# def display_codebook(path):
+#     codebook = pd.read_csv(path, sep='.', index_col=0)
+#     sns.heatmap(codebook)
+#     plt.show()
 
 def color_blobs(img, blob_radius=1, num_blobs=1):
     '''
@@ -48,7 +58,6 @@ def color_blobs(img, blob_radius=1, num_blobs=1):
         used.add(tuple(blob_index))
     # return coordinates that are in the blob(s)
     return used
-
 
 # approximately solve min_z ||zA-x||^2_2 st ||z||_0 <= max_iters
 def matching_pursuit(x, A, max_iters, thr=1):
@@ -92,4 +101,7 @@ def matching_pursuit(x, A, max_iters, thr=1):
     return z
 
 if __name__ == '__main__':
-    display_codebook('codebook.csv')
+    pass
+
+
+

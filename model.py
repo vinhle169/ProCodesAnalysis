@@ -15,7 +15,7 @@ import os, shutil, time
 
 # check if gpu is available
 use_gpu = torch.cuda.is_available()
-print(use_gpu)
+print("Is gpu available:", use_gpu)
 
 # noinspection PyTypeChecker
 class ColorizationNet(nn.Module):
@@ -104,7 +104,7 @@ class ColorizationNet(nn.Module):
 
         self.model8 = nn.Sequential(*
             [
-                nn.ConvTranspose2d(512, 256, kernel_size=4, stride=1, padding=2, bias=True),
+                nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1, bias=True),
                 nn.ReLU(True),
                 nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1, bias=True),
                 nn.ReLU(True),
@@ -116,7 +116,7 @@ class ColorizationNet(nn.Module):
 
         self.softmax = nn.Softmax(dim=1)
         self.model_out = nn.Conv2d(313, 2, kernel_size=1, padding=0, dilation=1, stride=1, bias=False)
-        self.upsample4 = nn.Upsample(scale_factor=4, mode='bilinear')
+        self.upsample4 = nn.Upsample(scale_factor=32, mode='bilinear')
 
     def forward(self, input0):
         # Pass in inputs through each of the sets of conv layers, input should be normalized
@@ -129,7 +129,6 @@ class ColorizationNet(nn.Module):
         conv_67 = self.model7(conv_56)
         conv_78 = self.model8(conv_67)
         out_8 = self.model_out(self.softmax(conv_78))
-
         return self.upsample4(out_8)
 
 if __name__ == "__main__":
