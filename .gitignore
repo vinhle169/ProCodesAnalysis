@@ -1,5 +1,7 @@
 # Image stacks
 *.tif
+data/
+fakedata/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
