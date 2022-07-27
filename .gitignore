@@ -1,5 +1,6 @@
-# Image stacks
+# data 
 *.tif
+*.tar
 data/
 fakedata/
 
