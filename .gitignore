@@ -1,6 +1,7 @@
 # data 
 *.tif
 *.tar
+*.pt
 data/
 fakedata/
 
