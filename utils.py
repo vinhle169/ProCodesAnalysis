@@ -37,12 +37,11 @@ def load_codebook(path, values=True):
 
 def color_blobs(img, blob_radius=1, num_blobs=1):
     '''
-
-    :param img:
+    :param img: in the shape -> channel x height x width
     :return: grayscale image where n blobs are filled in with the right color
     '''
     def get_neighbors(img, index):
-        # up, down, left, right: do this later
+        # assumes 2d height x width
         i, j = index[0], index[1]
         print(img[i][j], 'center')
         blob = img[i - blob_radius:i + blob_radius + 1, j - blob_radius:j + blob_radius + 1]
@@ -50,12 +49,13 @@ def color_blobs(img, blob_radius=1, num_blobs=1):
 
     possible_blobs = np.transpose(np.nonzero(img > 0))
     used = set()
-    for i in range(num_blobs):
-        idx = np.random.randint(0, possible_blobs.shape[0])
-        blob_index = possible_blobs[idx]
-        blob = get_neighbors(img, blob_index)
-        print(blob)
-        used.add(tuple(blob_index))
+    for channel in range(len(img.shape[0])):
+        for i in range(num_blobs):
+            idx = np.random.randint(0, possible_blobs.shape[0])
+            blob_index = possible_blobs[idx]
+            blob = get_neighbors(img, blob_index)
+            print(blob)
+            used.add(tuple(blob_index))
     # return coordinates that are in the blob(s)
     return used
 
@@ -101,7 +101,11 @@ def matching_pursuit(x, A, max_iters, thr=1):
     return z
 
 if __name__ == '__main__':
-    pass
+    img = torch.load('data/slices/F030_trim_manual_1.pt')
+    print(img.shape)
+    blob = color_blobs(img)
+    print(blob.shape)
+
 
 
 
