@@ -1,13 +1,28 @@
 import argparse
-from model import *
+from colorization import *
+from unet import *
 from tqdm import tqdm
 import torch.nn as nn
 from dataset import ProCodesDataModule
 
 
-# noinspection PyUnboundLocalVariable
+# noinspection PyUnboundLocalVariable,PyCallingNonCallable
 def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs: int, batch_size: int, model_path: str,
-          continue_training: str, parallel: bool = True):
+          loss_fn: object, continue_training: str = None, parallel: bool = True, data_type: str = 'unet'):
+    '''
+
+    :param model: model object
+    :param train_path: path to training, if unet this should be a list of two paths
+    :param learning_rate: learning rate of the optimizer
+    :param epochs:
+    :param batch_size:
+    :param model_path: path of where the model is to be saved
+    :param continue_training: path of where the model is to be loaded from if training is continued
+    :param loss_fn: loss function
+    :param parallel: bool if parallel training
+    :param data_type: determine type of model
+    :return:
+    '''
     torch.cuda.empty_cache()
     start_time = time.time()
     train_losses, epoch = [], 0
@@ -23,15 +38,16 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
         cuda0 = torch.device('cuda:0')
         model.to(cuda0)
     # setup hyper parameters
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=0.001, momentum=0.95)
+    criterion = loss_fn
+    optimizer = torch.optim.Adam(model.parameters(), lr= learning_rate)
+
     # repetitive if statement because of bug with cuda and model creation and optimizer creation
     if continue_training:
         optimizer.load_state_dict(model_data['optimizer_state_dict'])
     # if continuing from a previous process:
 
     # set up dataloader
-    z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0.3)
+    z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0.3, data_type=data_type)
     train_loader = z.train_dataloader()
     for e in tqdm(range(epoch, epochs)):
         running_loss = 0
@@ -59,7 +75,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
                 'train_losses': train_losses
             }, model_path + f'{e + 1}_checkpoint.tar')
         print('Epoch [{}/{}], Loss: {:.4f}'.format(e + 1, epochs, loss.item()))
-    print(time.time() - start_time, 'this long to finish')
+    print((time.time() - start_time)/60, ' minutes to finish')
     return train_losses
 
 
@@ -67,23 +83,30 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # batch_size
     parser.add_argument('batch_size')
+    # epochs
+    parser.add_argument('epochs')
     # path to data
     parser.add_argument('path')
     # path (optional) to pretrained model
     parser.add_argument('--model')
+    parser.add_argument('--label_path')
     args = parser.parse_args()
     batch_size = int(args.batch_size)
+    epochs = int(args.epochs)
     path = args.path
     model_presave = args.model
-    cnet = ColorizationNet()
+    label_path = args.label_path
+    if label_path:
+        path = [path, label_path]
+    unet = UNet(num_class = 3, retain_dim=True)
     print("BEGIN TRAINING")
-    loss_data = train(cnet, path, 0.0001, 1000, batch_size, 'models/', continue_training=model_presave)
+    loss_data = train(unet, path, 0.00001, epochs, batch_size, 'models/unet/', loss_fn=FocalLoss(), continue_training=model_presave, parallel=False)
     plt.plot(loss_data, '-o')
     plt.xlabel('epoch')
     plt.ylabel('loss')
     plt.title('Loss Over Time')
     # noinspection SpellCheckingInspection
-    plt.savefig('loss_procodes_colorization_model.png')
+    plt.savefig('loss_procodes_unet_model.png')
     plt.show()
     #
     # with torch.no_grad():

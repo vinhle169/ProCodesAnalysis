@@ -4,8 +4,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from cv2 import fastNlMeansDenoising as denoising
 from imageio import volread as imread
-from skimage.filters import threshold_otsu, rank
+from skimage.filters import threshold_otsu, rank, threshold_local
+from skimage import img_as_ubyte
+
 
 def random_channel(image, multi_image=False):
     # assuming channels in the 1st dimension
@@ -35,29 +38,35 @@ def load_codebook(path, values=True):
 #     sns.heatmap(codebook)
 #     plt.show()
 
-def color_blobs(img, blob_radius=1, num_blobs=1):
+# noinspection PyTypeChecker
+def color_blobs(img, blob_radius=50, num_blobs=1):
     '''
     :param img: in the shape -> channel x height x width
     :return: grayscale image where n blobs are filled in with the right color
     '''
-    def get_neighbors(img, index):
+    def set_blob(img, index):
         # assumes 2d height x width
-        i, j = index[0], index[1]
-        print(img[i][j], 'center')
-        blob = img[i - blob_radius:i + blob_radius + 1, j - blob_radius:j + blob_radius + 1]
-        return blob
+        i, j = index
+        img[i - blob_radius:i + blob_radius + 1, j - blob_radius:j + blob_radius + 1] = 1
+        return img
 
-    possible_blobs = np.transpose(np.nonzero(img > 0))
-    used = set()
-    for channel in range(len(img.shape[0])):
+    img_c = torch.clone(img)
+    for channel in range(img_c.shape[0]):
+        img_i = img[channel]
+        # possible_blobs = torch.nonzero(img_i > 0)
+        threshold = img_i >= (torch.max(img_i) * .3)
+        possible_blobs = torch.nonzero(threshold > 0)
+        blob_mask = torch.zeros(img_i.shape)
         for i in range(num_blobs):
+            # choose a random center for a blob
             idx = np.random.randint(0, possible_blobs.shape[0])
             blob_index = possible_blobs[idx]
-            blob = get_neighbors(img, blob_index)
-            print(blob)
-            used.add(tuple(blob_index))
+            i, j = blob_index
+            blob_mask = set_blob(blob_mask, blob_index)
+        img_c[channel] = blob_mask
+
     # return coordinates that are in the blob(s)
-    return used
+    return img, img*img_c
 
 # approximately solve min_z ||zA-x||^2_2 st ||z||_0 <= max_iters
 def matching_pursuit(x, A, max_iters, thr=1):
@@ -101,10 +110,31 @@ def matching_pursuit(x, A, max_iters, thr=1):
     return z
 
 if __name__ == '__main__':
-    img = torch.load('data/slices/F030_trim_manual_1.pt')
-    print(img.shape)
-    blob = color_blobs(img)
-    print(blob.shape)
+    path = '/nobackup/users/vinhle/data/'
+    for filename in os.listdir(path + 'slices/'):
+        img = torch.load(path + 'slices/' + filename)
+        img, blob = color_blobs(img, num_blobs=3, blob_radius=200)
+        combined = torch.amax(img, 0).view((1,2048,2048))
+        inp = torch.cat((combined, blob))
+        torch.save(inp, path + 'blobs/' + filename)
+    # sns.heatmap(img)
+    # img = torch.load(path + 'slices/' + filename)
+    # img, blob = color_blobs(img, num_blobs=3, blob_radius=200)
+    # combined = torch.amax(img, 0).view((1,2048,2048))
+    # inp = torch.cat((combined, blob))
+    # # print(blob.shape)
+    # fig, axs = plt.subplots(3,2)
+    # fig.set_figheight(15)
+    # fig.set_figwidth(15)
+    # sns.heatmap(blob[0], ax=axs[0,0], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
+    # sns.heatmap(blob[1], ax=axs[1, 0], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
+    # sns.heatmap(blob[2], ax=axs[2, 0], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
+
+    # sns.heatmap(img[0], ax=axs[0, 1], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
+    # sns.heatmap(img[1], ax=axs[1, 1], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
+    # sns.heatmap(img[2], ax=axs[2, 1], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
+    # plt.show()
+
 
 
 

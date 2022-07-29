@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 from torch.nn import ConvTranspose2d
 from torch.nn import Conv2d
 from torch.nn import MaxPool2d
@@ -24,7 +25,7 @@ class Block(Module):
 
 
 class Encoder(Module):
-    def __init__(self, channels=(3,64,128,256,512,1024)):
+    def __init__(self, channels=(4,64,128,256,512,1024)):
         super().__init__()
         # Stores our encoder blocks which are supposed to overtime increase channel size
         self.encoder_blocks = ModuleList([
@@ -71,12 +72,14 @@ class Decoder(Module):
 
     def crop(self, enc_features, inp):
         # grab dims of inputs then crop encoder
-        _, _, h, w = inp.shape
-        enc_features = CenterCrop([h, w])(enc_features)
+        print(enc_features.shape)
+        print(inp.shape)
+        _, _, h, w = list(inp.shape)
+        enc_features = CenterCrop(h)(enc_features)
         return enc_features
 
-class UNet(nn.module):
-    def __init__(self, enc_channels=(3,64,128,256,512,1024), dec_channels=(1024, 512, 256, 128, 64), num_class=1,
+class UNet(Module):
+    def __init__(self, enc_channels=(4,64,128,256,512,1024), dec_channels=(1024, 512, 256, 128, 64), num_class=1,
                  retain_dim=False, out_sz=(572,572)):
         super().__init__()
         self.encoder = Encoder(enc_channels)
@@ -92,3 +95,34 @@ class UNet(nn.module):
         if self.retain_dim:
             out = F.interpolate(out, self.out_sz)
         return out
+
+
+class FocalLoss(Module):
+
+    def __init__(self, weight=None,
+                 gamma=2., reduction='none'):
+        Module.__init__(self)
+        self.weight = weight
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, input_tensor, target_tensor):
+        log_prob = F.log_softmax(input_tensor, dim=-1)
+        prob = torch.exp(log_prob)
+        return F.nll_loss(
+            ((1 - prob) ** self.gamma) * log_prob,
+            target_tensor,
+            weight=self.weight,
+            reduction=self.reduction
+        )
+
+if __name__ == '__main__':
+    unet = UNet(num_class = 3, retain_dim=True)
+    unet = nn.DataParallel(unet)
+    x = torch.randn(2,4,244,244).cuda()
+    y = torch.randn(2,3,244,244).cuda()
+    unet = unet.cuda()
+    print(unet(x).shape)
+    # l = FocalLoss()
+    # loss = (unet(x), y)
+    # print(loss)
