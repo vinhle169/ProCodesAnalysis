@@ -1,10 +1,9 @@
 import os
+import seaborn as sns
 import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
-from cv2 import fastNlMeansDenoising as denoising
 from imageio import volread as imread
 from skimage.filters import threshold_otsu, rank, threshold_local
 from skimage import img_as_ubyte
@@ -33,10 +32,10 @@ def load_codebook(path, values=True):
         codebook = codebook.values.copy().T
     return codebook
 
-# def display_codebook(path):
-#     codebook = pd.read_csv(path, sep='.', index_col=0)
-#     sns.heatmap(codebook)
-#     plt.show()
+def display_codebook(path):
+    codebook = pd.read_csv(path, sep='.', index_col=0)
+    sns.heatmap(codebook)
+    plt.show()
 
 # noinspection PyTypeChecker
 def color_blobs(img, blob_radius=50, num_blobs=1):
@@ -67,6 +66,16 @@ def color_blobs(img, blob_radius=50, num_blobs=1):
 
     # return coordinates that are in the blob(s)
     return img, img*img_c
+
+
+def plot_loss(train_losses, title, savefig=False):
+    x = [i for i in range(len(train_losses))]
+    y = train_losses
+    data = {"Epochs":x, "Loss":y}
+    sns.lineplot(data = data, x = "Epochs", y = "Loss")
+    if savefig:
+        plt.savefig("Loss Graph.png").set(title=title)
+    return None
 
 # approximately solve min_z ||zA-x||^2_2 st ||z||_0 <= max_iters
 def matching_pursuit(x, A, max_iters, thr=1):
@@ -110,32 +119,39 @@ def matching_pursuit(x, A, max_iters, thr=1):
     return z
 
 if __name__ == '__main__':
-    path = '/nobackup/users/vinhle/data/'
-    for filename in os.listdir(path + 'slices/'):
-        img = torch.load(path + 'slices/' + filename)
-        img, blob = color_blobs(img, num_blobs=3, blob_radius=200)
-        combined = torch.amax(img, 0).view((1,2048,2048))
-        inp = torch.cat((combined, blob))
-        torch.save(inp, path + 'blobs/' + filename)
-    # sns.heatmap(img)
+    # path = '/nobackup/users/vinhle/data/'
+    # for filename in os.listdir(path + 'slices/'):
+    #     img = torch.load(path + 'slices/' + filename)
+    #     img, blob = color_blobs(img, num_blobs=3, blob_radius=200)
+    #     combined = torch.amax(img, 0).view((1,2048,2048))
+    #     inp = torch.cat((combined, blob))
+    #     torch.save(inp, path + 'blobs/' + filename)
+
+    #
+    # path = 'data/'
+    # filename = 'F031_trim_manual_1.pt'
     # img = torch.load(path + 'slices/' + filename)
     # img, blob = color_blobs(img, num_blobs=3, blob_radius=200)
-    # combined = torch.amax(img, 0).view((1,2048,2048))
+    # combined = torch.amax(img, 0)
+    # sns.heatmap(combined, xticklabels=100, yticklabels=200, vmin=0, vmax=1)
     # inp = torch.cat((combined, blob))
-    # # print(blob.shape)
+    # print(blob.shape)
     # fig, axs = plt.subplots(3,2)
     # fig.set_figheight(15)
     # fig.set_figwidth(15)
-    # sns.heatmap(blob[0], ax=axs[0,0], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
-    # sns.heatmap(blob[1], ax=axs[1, 0], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
-    # sns.heatmap(blob[2], ax=axs[2, 0], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
-
-    # sns.heatmap(img[0], ax=axs[0, 1], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
-    # sns.heatmap(img[1], ax=axs[1, 1], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
-    # sns.heatmap(img[2], ax=axs[2, 1], xticklabels=100, yticklabels=100, vmin=0, vmax=1)
+    # axs[0][0].set_title('Images With Blobs Sampled')
+    # sns.heatmap(blob[0], ax=axs[0,0], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
+    # sns.heatmap(blob[1], ax=axs[1, 0], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
+    # sns.heatmap(blob[2], ax=axs[2, 0], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
+    # axs[0][1].set_title('Original Images')
+    # sns.heatmap(img[0], ax=axs[0, 1], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
+    # sns.heatmap(img[1], ax=axs[1, 1], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
+    # sns.heatmap(img[2], ax=axs[2, 1], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
+    # rows = ['Flag', 'C', 'S']
+    # for ax, row in zip(axs[:, 0], rows):
+    #     ax.set_ylabel(row, rotation=0, size='large')
     # plt.show()
-
-
+    pass
 
 
 

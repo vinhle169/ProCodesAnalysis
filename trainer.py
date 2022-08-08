@@ -3,8 +3,9 @@ from colorization import *
 from unet import *
 from tqdm import tqdm
 import torch.nn as nn
+from torchvision import ops
 from dataset import ProCodesDataModule
-
+from torch.nn import MSELoss
 
 # noinspection PyUnboundLocalVariable,PyCallingNonCallable
 def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs: int, batch_size: int, model_path: str,
@@ -96,46 +97,9 @@ if __name__ == '__main__':
     path = args.path
     model_presave = args.model
     label_path = args.label_path
+    MSE = MSELoss(reduction='mean')
     if label_path:
         path = [path, label_path]
-    unet = UNet(num_class = 3, retain_dim=True)
+    unet = UNet(num_class = 3, retain_dim=True, out_sz=(2048,2048), dropout=0)
     print("BEGIN TRAINING")
-    loss_data = train(unet, path, 0.00001, epochs, batch_size, 'models/unet/', loss_fn=FocalLoss(), continue_training=model_presave, parallel=False)
-    plt.plot(loss_data, '-o')
-    plt.xlabel('epoch')
-    plt.ylabel('loss')
-    plt.title('Loss Over Time')
-    # noinspection SpellCheckingInspection
-    plt.savefig('loss_procodes_unet_model.png')
-    plt.show()
-    #
-    # with torch.no_grad():
-    #     checkpoint = torch.load('models/90_checkpoint.tar')
-    #     cnet.load_state_dict(checkpoint['model_state_dict'])
-    #     img_path = 'fakedata/20240.jpg'
-    #     img = cv2.imread(img_path)
-    #     img = img.reshape((3,224,224))
-    #     x,y,i = random_channel(img)
-    #     x_ = x.copy()
-    #     print(y.shape, i)
-    #     y = np.insert(y, i, x, 0)
-    #     print(y.shape)
-    #     x= np.resize(x,(1,1,224,224))
-    #     x = torch.Tensor(x)
-    #     y2 = cnet(x)[0].cpu()
-    #     y2 = y2.cpu()
-    #     y2 = y2.numpy()
-    #     y2 = np.insert(y2, i, x, 0)
-    #     y.resize((224,224,3))
-    #     y2.resize((224,224,3))
-    #     print(y.shape, y2.shape, np.max(y))
-    #     fig, axs = plt.subplots(1,3)
-    #     y = cv2.cvtColor(y, cv2.COLOR_BGR2RGB)
-    #     y2 = cv2.cvtColor(y2, cv2.COLOR_BGR2RGB)
-    #     axs[0].set_title('Blue Channel')
-    #     axs[0].imshow(x_)
-    #     axs[1].set_title('Original Image')
-    #     axs[1].imshow(y)
-    #     axs[2].set_title('Colorized')
-    #     axs[2].imshow(y2/255)
-    #     plt.show()
+    loss_data = train(unet, path, 0.0001, epochs, batch_size, 'models/unet/', loss_fn=MSE, continue_training=model_presave, parallel=True)
