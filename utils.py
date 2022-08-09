@@ -37,7 +37,47 @@ def display_codebook(path):
     sns.heatmap(codebook)
     plt.show()
 
-# noinspection PyTypeChecker
+
+def fixed_blobs(img_shape, v_stride: int, w_stride: int, blob_len: int, v_padding: int = 0,
+                w_padding: int = 0):
+    '''
+    :param img_shape: tuple/list (h x w)
+    :param num_channels:
+    :
+    '''
+
+    # make sure parameters are correct
+    assert blob_len < img_shape[0] and blob_len < img_shape[1]
+    assert v_stride < img_shape[0] and v_padding < img_shape[0]
+    assert w_stride < img_shape[1] and w_padding < img_shape[1]
+    zeros = np.zeros(img_shape)
+    flag = True
+    # i, horz index ; j, vert index
+    i,j = 0,0
+    while flag:
+        if i == 0:
+            i += w_padding
+        if j == 0:
+            j += v_padding
+        if i > (img_shape[1]) - w_padding:
+            i = 0
+            j += v_stride
+            if j > (img_shape[0]) - v_padding:
+                break
+
+        else:
+            end_w = i + blob_len
+            if end_w > (img_shape[1]) - w_padding:
+                end_w = (img_shape[1]) - w_padding
+            end_v = j + blob_len
+            if end_v > (img_shape[0]) - v_padding:
+                end_v = (img_shape[0]) - v_padding
+            zeros[j: end_v, i: end_w] = 1
+            i += w_stride
+
+    return zeros
+
+
 def color_blobs(img, blob_radius=50, num_blobs=1):
     '''
     :param img: in the shape -> channel x height x width
@@ -128,30 +168,9 @@ if __name__ == '__main__':
     #     torch.save(inp, path + 'blobs/' + filename)
 
     #
-    # path = 'data/'
-    # filename = 'F031_trim_manual_1.pt'
-    # img = torch.load(path + 'slices/' + filename)
-    # img, blob = color_blobs(img, num_blobs=3, blob_radius=200)
-    # combined = torch.amax(img, 0)
-    # sns.heatmap(combined, xticklabels=100, yticklabels=200, vmin=0, vmax=1)
-    # inp = torch.cat((combined, blob))
-    # print(blob.shape)
-    # fig, axs = plt.subplots(3,2)
-    # fig.set_figheight(15)
-    # fig.set_figwidth(15)
-    # axs[0][0].set_title('Images With Blobs Sampled')
-    # sns.heatmap(blob[0], ax=axs[0,0], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
-    # sns.heatmap(blob[1], ax=axs[1, 0], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
-    # sns.heatmap(blob[2], ax=axs[2, 0], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
-    # axs[0][1].set_title('Original Images')
-    # sns.heatmap(img[0], ax=axs[0, 1], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
-    # sns.heatmap(img[1], ax=axs[1, 1], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
-    # sns.heatmap(img[2], ax=axs[2, 1], xticklabels=100, yticklabels=200, vmin=0, vmax=1)
-    # rows = ['Flag', 'C', 'S']
-    # for ax, row in zip(axs[:, 0], rows):
-    #     ax.set_ylabel(row, rotation=0, size='large')
-    # plt.show()
-    pass
+    z = fixed_blobs(img_shape=(2048, 2048),v_stride=400,w_stride=400,blob_len=100,v_padding=100,w_padding=100)
 
+    plt.imshow(z)
+    plt.show()
 
 
