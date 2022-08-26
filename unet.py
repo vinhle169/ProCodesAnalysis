@@ -13,7 +13,6 @@ from torch.nn import functional as F
 from torchvision.utils import save_image
 
 # Building block unit of encoder and decoder architecture
-# noinspection PyTypeChecker
 class Block(Module):
     def __init__(self, inChannels, outChannels, dropout = 0.15):
         super().__init__()
@@ -108,7 +107,7 @@ class UNet(Module):
         out = self.decoder(enc_features[::-1][0], enc_features[::-1][1:])
         out = self.head(out)
         if self.retain_dim:
-            out = F.interpolate(out, self.out_sz)
+            out = F.interpolate(out, self.out_sz).clamp(min=0, max=1)
         return out
 
 
@@ -146,27 +145,40 @@ class mIoULoss(nn.Module):
         return 1-loss.mean()
 
 if __name__ == '__main__':
-    directory = 'models/models/'
-    test_images = ['/nobackup/users/vinhle/data/blobs/F051_trim_manual_9.pt', '/nobackup/users/vinhle/data/blobs/F030_trim_manual_4.pt']
-    for model_name in os.listdir(directory):
-        print(f'Trying {model_name}')
-        checkpoint = torch.load(directory+model_name)
-        if 'dropout' in model_name:
-            unet = UNet(num_class = 3, retain_dim=True, out_sz = (2048,2048))
-        else:
-            unet = UNet(num_class = 3, retain_dim=True, out_sz = (2048,2048), dropout=0)
-        unet = nn.DataParallel(unet)
-        unet.load_state_dict(checkpoint['model_state_dict'])
-        unet.eval()
-        cuda0 = torch.device('cuda:0')
-        unet.to(cuda0)
-        for i in range(len(test_images)):
-            img = torch.load(test_images[i]).to(cuda0)
-            img = img.view((1,4,2048,2048))
-            output = unet(img)
-            torch.save(output, f'{model_name[:-3]}_{i}.pt')
+    unet = UNet(num_class = 3, retain_dim=True, out_sz=(256, 256))
+    rand_input = torch.randn((4, 256, 256)).view((2, 4, 256, 256))
+    rand_output = torch.randn((3, 256, 256)).view((2, 3, 256, 256))
+    rand_output = (rand_output - torch.min(rand_output)) / (torch.max(rand_output) - torch.min(rand_output))
+    print(torch.max(rand_output), torch.min(rand_output))
+    loss = nn.BCELoss()
+    output = unet(rand_input)
+    print(torch.max(output), torch.min(output))
+    # out = sig(output)
+    print(output.size())
+    loss_output = loss(output, rand_output)
+    print(loss_output.item())
+    # directory = 'models/models/'
+    # test_images = ['/nobackup/users/vinhle/data/blobs/F051_trim_manual_9.pt', '/nobackup/users/vinhle/data/blobs/F030_trim_manual_4.pt']
+    # for model_name in os.listdir(directory):
+    #     print(f'Trying {model_name}')
+    #     checkpoint = torch.load(directory+model_name)
+    #     if 'dropout' in model_name:
+    #         unet = UNet(num_class = 3, retain_dim=True, out_sz = (2048,2048))
+    #     else:
+    #         unet = UNet(num_class = 3, retain_dim=True, out_sz = (2048,2048), dropout=0)
+    #     unet = nn.DataParallel(unet)
+    #     unet.load_state_dict(checkpoint['model_state_dict'])
+    #     unet.eval()
+    #     cuda0 = torch.device('cuda:0')
+    #     unet.to(cuda0)
+    #     for i in range(len(test_images)):
+    #         img = torch.load(test_images[i]).to(cuda0)
+    #         img = img.view((1,4,2048,2048))
+    #         output = unet(img)
+    #         torch.save(output, f'{model_name[:-3]}_{i}.pt')
+    #
+    #     del unet
+    #     del checkpoint
 
-        del unet
-        del checkpoint
 
 

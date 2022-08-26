@@ -7,10 +7,11 @@ from torchvision import ops
 from dataset import ProCodesDataModule
 from torch.nn import MSELoss
 
+
 # noinspection PyUnboundLocalVariable,PyCallingNonCallable
 def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs: int, batch_size: int, model_path: str,
           loss_fn: object, continue_training: str = None, parallel: bool = True, data_type: str = 'unet'):
-    '''
+    """
 
     :param model: model object
     :param train_path: path to training, if unet this should be a list of two paths
@@ -23,7 +24,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
     :param parallel: bool if parallel training
     :param data_type: determine type of model
     :return:
-    '''
+    """
     torch.cuda.empty_cache()
     start_time = time.time()
     train_losses, epoch = [], 0
@@ -40,7 +41,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
         model.to(cuda0)
     # setup hyper parameters
     criterion = loss_fn
-    optimizer = torch.optim.Adam(model.parameters(), lr= learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # repetitive if statement because of bug with cuda and model creation and optimizer creation
     if continue_training:
@@ -48,16 +49,20 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
     # if continuing from a previous process:
 
     # set up dataloader
-    z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0.3, data_type=data_type)
-    train_loader = z.train_dataloader()
+    # z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0, data_type=data_type)
+    input_img = torch.load(train_path[0]+list(os.listdir(train_path[0]))[0])
+    label_img = torch.load(train_path[1]+list(os.listdir(train_path[1]))[0])
+    train_loader = [(input_img, label_img)]
+    # train_loader = z.train_dataloader()
     for e in tqdm(range(epoch, epochs)):
         running_loss = 0
         for i, image_label in enumerate(train_loader):
             image, label = image_label
             image = image.to(cuda0)
+            image = image.view((1, 4, 256, 256))
             label = label.to(cuda0)
             # forward pass
-            output = model(image)
+            output = model(image)[0]
             loss = criterion(output, label)
             del image
             del label
@@ -67,14 +72,14 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
             loss.backward()
             optimizer.step()
         train_losses.append(running_loss / len(train_loader))
-        if (e + 1) % 20 == 0:
+        if (e + 1) % 50 == 0:
             torch.save({
                 'epoch': e,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
                 'train_losses': train_losses
-            }, model_path + f'{e + 1}_checkpoint.tar')
+            }, model_path + f'{e + 1}_checkpoint_mse_single_downsamp_otsu.tar')
         print('Epoch [{}/{}], Loss: {:.4f}'.format(e + 1, epochs, loss.item()))
     print((time.time() - start_time)/60, ' minutes to finish')
     return train_losses
@@ -90,6 +95,7 @@ if __name__ == '__main__':
     parser.add_argument('path')
     # path (optional) to pretrained model
     parser.add_argument('--model')
+    # path if using unet to labeled data
     parser.add_argument('--label_path')
     args = parser.parse_args()
     batch_size = int(args.batch_size)
@@ -98,8 +104,10 @@ if __name__ == '__main__':
     model_presave = args.model
     label_path = args.label_path
     MSE = MSELoss(reduction='mean')
+    BCE = nn.BCELoss(reduction='mean')
     if label_path:
         path = [path, label_path]
-    unet = UNet(num_class = 3, retain_dim=True, out_sz=(2048,2048), dropout=0)
+    unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=0.05)
     print("BEGIN TRAINING")
-    loss_data = train(unet, path, 0.0001, epochs, batch_size, 'models/unet/', loss_fn=MSE, continue_training=model_presave, parallel=True)
+    loss_data = train(unet, path, 0.000001, epochs, batch_size, 'models/unet/', loss_fn=MSE,
+                      continue_training=model_presave, parallel=True)

@@ -1,17 +1,21 @@
 from typing import List, Tuple
-
+import cmocean
+import matplotlib.pyplot as plt
 import numpy as np
-
+from unet import *
+from tqdm import tqdm
 from utils import *
 import itertools
 from collections import Counter
 from skimage.metrics import structural_similarity as ssim
+
 
 def elementwise_accuracy(img_1, img_2, ignore_zeros=False, deviation=0.001):
     '''
     Calculates Error between two images elementwise
     :param img_1:
     :param img_2:
+    :param ignore_zeros: bool which ignores zeros in calculation for elementwise accuracy
     :param deviation:
     :return: element wise accuracy between two images as a float
     '''
@@ -30,9 +34,7 @@ def elementwise_accuracy(img_1, img_2, ignore_zeros=False, deviation=0.001):
     else:
         img_diff = np.abs(img_1 - img_2)
         rounded_diff = np.where(img_diff <= deviation, 1, 0)
-        return np.sum(rounded_diff)/img_diff.size
-
-
+        return np.sum(rounded_diff) / img_diff.size
 
 
 def mse(img_1, img_2):
@@ -42,7 +44,7 @@ def mse(img_1, img_2):
     :param img_2:
     :return: mean squared error as a float
     '''
-    diff = np.sum((img_1 - img_2)**2)
+    diff = np.sum((img_1 - img_2) ** 2)
     return diff / img_1.size
 
 
@@ -78,7 +80,7 @@ class identifiable_submatrices:
     def __init__(self, codebook_path):
         self.path = codebook_path
         self.codebook = pd.read_csv(codebook_path, sep='.', index_col=0)
-        self.idx_to_col = {i:self.codebook.columns[i] for i in range(len(self.codebook.columns))}
+        self.idx_to_col = {i: self.codebook.columns[i] for i in range(len(self.codebook.columns))}
         self.idx_to_row = {i: self.codebook.index[i] for i in range(len(self.codebook.index))}
         self.codebook = pd.read_csv(codebook_path, sep='.', index_col=0).to_numpy()
         self.identifiable_submatrices(self.codebook)
@@ -102,6 +104,7 @@ class identifiable_submatrices:
         :param codebook_path:
         :return: list of all possible matrices that fulfill above constraints
         '''
+
         def get_index_identity(column):
             '''
             Get the index of the identity portion of the column (condition 2 from above)
@@ -119,11 +122,11 @@ class identifiable_submatrices:
             :return:
             '''
             mini = matrix[0:3]
-            perm_dict = {(1,1,0):[], (0,1,1):[], (1,0,1):[], (1,1,1):[]}
+            perm_dict = {(1, 1, 0): [], (0, 1, 1): [], (1, 0, 1): [], (1, 1, 1): []}
             keys = set(perm_dict.keys())
             for i in range(mini.shape[1]):
-                if tuple(mini[:,i]) in keys:
-                    perm_dict[tuple(mini[:,i])].append(i)
+                if tuple(mini[:, i]) in keys:
+                    perm_dict[tuple(mini[:, i])].append(i)
             # Does not satisfy is missing part of condition 1
             if [] in perm_dict.values():
                 return None
@@ -132,23 +135,25 @@ class identifiable_submatrices:
                 matrices = []
                 # get all combinations of matrices that are possible
                 for i in combs[0][1]:
-                    col_i = matrix[:,i]
+                    col_i = matrix[:, i]
                     idx_i = get_index_identity(col_i)
-                    chk  = [idx_i]
+                    chk = [idx_i]
 
                     for j in combs[1][1]:
                         col_j = matrix[:, j]
                         idx_j = get_index_identity(col_j)
                         if idx_j in chk:
                             continue
-                        else: chk2 = chk + [idx_j]
+                        else:
+                            chk2 = chk + [idx_j]
 
                         for k in combs[2][1]:
                             col_k = matrix[:, k]
                             idx_k = get_index_identity(col_k)
                             if idx_k in chk2:
                                 continue
-                            else: chk3 = chk2 + [idx_k]
+                            else:
+                                chk3 = chk2 + [idx_k]
 
                             for l in combs[3][1]:
                                 col_l = matrix[:, l]
@@ -157,8 +162,9 @@ class identifiable_submatrices:
                                     continue
                                 else:
                                     cols = np.array([col_i, col_j, col_k, col_l]).T
-                                    matrices.append([cols, [i,j,k,l]])
+                                    matrices.append([cols, [i, j, k, l]])
                 return matrices
+
         # getting the permutations of all the possible row orderings
         permutations = list(itertools.permutations(list(range(codebook.shape[0]))))
         possible_matrices = {}
@@ -189,7 +195,7 @@ class identifiable_submatrices:
 
         # returns new matrix without the empty row and the row index that was deleted
         def delete_empty(mat, row_ordering):
-            tf = np.all(mat == 0, axis = 1)
+            tf = np.all(mat == 0, axis=1)
             empty = np.argmax(tf)
             tf = np.invert(tf)
             new_mat = mat[tf]
@@ -202,11 +208,11 @@ class identifiable_submatrices:
             copy_mat = np.copy(mat).T
             new_positions = [0 for i in range(len(copy_mat))]
             for i in range(len(copy_mat)):
-                if tuple(copy_mat[i][0:3]) == (1,1,1):
+                if tuple(copy_mat[i][0:3]) == (1, 1, 1):
                     new_positions[3] = i
                 else:
                     new_positions[np.argmax(copy_mat[i][3:])] = i
-            new_mat = copy_mat[new_positions,:].T
+            new_mat = copy_mat[new_positions, :].T
             new_cols = cols[new_positions]
             return new_mat, new_cols
 
@@ -228,9 +234,155 @@ class identifiable_submatrices:
                     self.clean_matrices[row_order].append([new_mat, col_order])
 
 
+def generate_model_outputs(model_directory, model_list, input_img_list, output_path=''):
+    """
+    :param model_directory: location of all models being used
+    :param model_list: list of models by name being used in above location
+    :param input_img_list: list of paths for images being used
+    :param output_path: where you want these outputs to be saved
+    :return:
+    """
+    for model_name in tqdm(model_list):
+        model_path = model_directory + model_name
+        checkpoint = torch.load(model_path)
+        unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=.10)
+        unet = nn.DataParallel(unet)
+        unet.load_state_dict(checkpoint['model_state_dict'])
+        unet.eval()
+        cuda0 = torch.device('cuda:0')
+        unet.to(cuda0)
+        for i in range(len(input_img_list)):
+            img = torch.load(input_img_list[i]).to(cuda0)
+            img = img.view((1, 4, 256, 256))
+            output = unet(img)
+            print(model_name, model_name[:-4])
+            torch.save(output, f'{output_path}{model_name[:-4]}_{i}.pt')
+            del img
+            del output
+        del unet
+        del checkpoint
+
+
+def plot_different_outputs(file_paths, org_img_paths, ground_truth, img_size=[2048, 2048, 3]):
+    """
+    :param file_paths: list of paths of output images
+    :param org_img_paths: list of input images
+    :param ground_truth: list of ground truth images
+    :return:
+    """
+    fig, axs = plt.subplots(len(file_paths) + len(org_img_paths) + len(ground_truth), 4)
+    row_count = 0
+    fig.set_figheight(10*len(axs))
+    fig.set_figwidth(40)
+    for i in range(len(org_img_paths)):
+        print(i, 'i')
+        # plot test input
+        imgs_i = [im for im in file_paths if str(i) in im]
+        curr_img = torch.load(org_img_paths[i])
+        axs[row_count][0].set_ylabel(f"input image", fontsize=40)
+        for channel in range(len(curr_img)):
+            mini = curr_img[channel].view(img_size[0:2]).cpu()
+            mini = mini.detach()
+            mini = mini.numpy()
+            mini *= 10
+            mini = normalize_array(mini)
+            if channel == 0:
+                axs[row_count][channel].imshow(mini, vmin=0, vmax=1)
+            else:
+                one_channel = np.zeros(img_size)
+                one_channel[:, :, channel-1] = mini
+                axs[row_count][channel].imshow(one_channel, vmin=0, vmax=1)
+        del curr_img
+        row_count += 1
+
+        # plot ground truth
+        curr_img = torch.load(ground_truth[i])
+        axs[row_count][0].set_ylabel(f"ground truth image", fontsize=40)
+        combined = []
+        for channel in range(len(curr_img)):
+            one_channel = np.zeros(img_size)
+            mini = curr_img[channel].view(img_size[0:2]).cpu()
+            mini = mini.detach()
+            mini = mini.numpy()
+            mini *= 10
+            print(mini.shape)
+            mini = normalize_array(mini)
+
+            one_channel[:, :, channel] = mini
+            axs[row_count][channel+1].imshow(one_channel, vmin=0, vmax=1)
+            combined.append(mini)
+        combined = np.stack(combined, -1)
+        axs[row_count][0].imshow(combined)
+        del curr_img
+        del combined
+
+        # plot resulting images
+        row_count += 1
+
+        for img_p in range(len(imgs_i)):
+            print(row_count)
+            curr_img = torch.load(imgs_i[img_p])[0].cpu()
+            combined = []
+            print(imgs_i[img_p][0:imgs_i[img_p].find('.')])
+            axs[row_count][0].set_ylabel(imgs_i[img_p][10:imgs_i[img_p].find('.')-15], fontsize=50)
+            for channel in range(len(curr_img)):
+                one_channel = np.zeros(img_size)
+                mini = curr_img[channel].view(img_size[0:2]).detach()
+
+                mini = mini.numpy()
+                # print(np.isnan(np.sum(mini)))
+                print(mini.min(), mini.max(), channel)
+                if mini.max() != 0:
+                    mini = normalize_array(mini)
+                # print(np.isnan(np.sum(mini)))
+                # print(mini.min(), mini.max())
+                one_channel[:, :, channel] = mini
+                im = axs[row_count][channel + 1].imshow(one_channel, vmin=0, vmax=1)
+                mini = np.reshape(mini, img_size[0:2])
+                combined.append(mini)
+            combined = np.stack(combined, -1)
+            print(combined.min(), combined.max(), 'combined')
+            axs[row_count][0].imshow(combined, vmin=0, vmax=1)
+            del curr_img
+            row_count += 1
+    cols = ['Combined', 'Channel 0', 'Channel 1', 'Channel 2']
+    for ax, col in zip(axs[0], cols):
+        ax.set_title(col, fontsize=50)
+    plt.tight_layout()
+    # fig.subplots_adjust(right=0.8)
+    # cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+    # fig.colorbar(im, cax=cbar_ax)
+    plt.setp(axs, xticks=[], yticks=[])
+    plt.savefig('single_image_.png')
+    print('Done~~~~~~~~~~~~~~~~~~~~')
+
+
 if __name__ == '__main__':
-    pass
+    # model_names = ['160_checkpoint_bce.tar',
+    #                '200_checkpoint_bce_fixed.tar',
+    #                '200_checkpoint_mse_fixed.tar']
+    # output_images = ['archive/bce_0.pt',
+    #                  'archive/bce_1.pt',
+    #                  'archive/bce_fixed_0.pt',
+    #                  'archive/bce_fixed_1.pt',
+    #                  'archive/mse_fixed_0.pt',
+    #                  'archive/mse_fixed_1.pt']
+    # test_images = ['/nobackup/users/vinhle/data/fixed_blobs_otsu/F051_trim_manual_9.pt',
+    #                '/nobackup/users/vinhle/data/fixed_blobs_otsu/F030_trim_manual_4.pt']
+    # actual_images = ['/nobackup/users/vinhle/data/slices/F051_trim_manual_9.pt',
+    #                  '/nobackup/users/vinhle/data/slices/F030_trim_manual_4.pt']
+    # generate_model_outputs('models/model_comparisons/', model_names, test_images, actual_images)
+    # plot_different_outputs(output_images, test_images, actual_images)
 
+    model_names = ['100_checkpoint_mse_single_downsamp_otsu.tar',
+                   '500_checkpoint_mse_single_downsamp_otsu.tar',
+                   '900_checkpoint_mse_single_downsamp_otsu.tar']
+    model_directory = 'models/unet/'
+    actual_images = ['/nobackup/users/vinhle/data/one_img_truth_downsamp_otsu/F030_trim_manual_0.pt']
+    input_image_list = ['/nobackup/users/vinhle/data/one_image_downsamp/F030_trim_manual_0.pt']
+    generate_model_outputs(model_directory, model_names, input_image_list, "one_output/")
+    print('---------------generating done---------------------')
+    output_images = sorted(list(f'one_output/{i}' for i in os.listdir('one_output/')))
 
-
-
+    plot_different_outputs(output_images, input_image_list, actual_images, img_size=[256, 256, 3])
+    print('Done')
