@@ -11,6 +11,8 @@ from torch.nn import ReLU
 from torchvision.transforms import CenterCrop
 from torch.nn import functional as F
 from torchvision.utils import save_image
+import segmentation_models_pytorch as smp
+from segmentation_models_pytorch.encoders import get_preprocessing_fn
 
 # Building block unit of encoder and decoder architecture
 class Block(Module):
@@ -60,10 +62,17 @@ class Decoder(Module):
     def __init__(self, channels=(1024, 512, 256, 128, 64),  dropout=0.15):
         super().__init__()
         self.channels = channels
+        self.upSample = nn.Upsample(scale_factor=2)
         # up-sampler block
-        self.up_convs = ModuleList([
-            ConvTranspose2d(channels[i], channels[i + 1], 2, 2) for i in range(len(channels) - 1)
-        ])
+
+        up_convs = []
+        for i in range(len(channels)-1):
+            up_convs.append(nn.Conv2d(channels[i], channels[i+1], 1, 1))
+        self.up_convs = ModuleList(up_convs)
+
+        # self.up_convs = ModuleList([
+        #     ConvTranspose2d(channels[i], channels[i + 1], 2, 2) for i in range(len(channels) - 1)
+        # ])
         # down-sampler block
         self.dec_blocks = ModuleList([
             Block(channels[i], channels[i + 1]) for i in range(len(channels) - 1)
@@ -73,13 +82,13 @@ class Decoder(Module):
     def forward(self, inp, enc_features):
         for i in range(len(self.channels) - 1):
             # upsample
+            inp = self.upSample(inp)
             inp = self.up_convs[i](inp)
             inp = self.dropout(inp)
             # crop features and concatenate with upsampled features
             enc_feat = self.crop(enc_features[i], inp)
-            enc_feat = self.dropout(enc_feat)
+
             inp = torch.cat([inp, enc_feat], dim=1)
-            inp = self.dropout(inp)
             # pass through decoder block
             inp = self.dec_blocks[i](inp)
             inp = self.dropout(inp)
@@ -104,81 +113,43 @@ class UNet(Module):
 
     def forward(self, inp):
         enc_features = self.encoder(inp)
-        out = self.decoder(enc_features[::-1][0], enc_features[::-1][1:])
+        out = self.decoder(enc_features[-1], enc_features[::-1][1:])
         out = self.head(out)
         if self.retain_dim:
             out = F.interpolate(out, self.out_sz).clamp(min=0, max=1)
         return out
 
+def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=3, preprocess_only=False):
+    preprocess_fn = get_preprocessing_fn(encoder_name, pretrained=encoder_weights)
+    if preprocess_only:
+        return preprocess_fn
+    model = smp.Unet(
+        encoder_name=encoder_name,  # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
+        encoder_weights=encoder_weights,  # use `imagenet` pre-trained weights for encoder initialization
+        in_channels=in_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
+        classes=classes,  # model output channels (number of classes in your dataset)
+        activation=None  # type of activation function for the final layer
+    )
+    return model, preprocess_fn
 
-def to_one_hot(tensor, nClasses):
-    n, h, w = tensor.size()
-    one_hot = torch.zeros(n, nClasses, h, w).scatter_(1, tensor.view(n, 1, h, w), 1)
-    return one_hot
-
-
-class mIoULoss(nn.Module):
-    def __init__(self, weight=None, size_average=True, n_classes=3, reduction='mean'):
-        super(mIoULoss, self).__init__()
-        self.classes = n_classes
-
-    def forward(self, inputs, target_oneHot, reduction='mean'):
-        # inputs => N x Classes x H x W
-        # target_oneHot => N x Classes x H x W
-        N = inputs.size()[0]
-
-        # predicted probabilities for each pixel along channel
-        inputs = F.softmax(inputs, dim=1)
-
-        # Numerator Product
-        inter = inputs * target_oneHot
-        ## Sum over all pixels N x C x H x W => N x C
-        inter = inter.view(N, self.classes, -1).sum(2)
-
-        # Denominator
-        union = inputs + target_oneHot - (inputs * target_oneHot)
-        ## Sum over all pixels N x C x H x W => N x C
-        union = union.view(N, self.classes, -1).sum(2)
-
-        loss = inter / union
-        ## Return average loss over classes and batch
-        return 1-loss.mean()
 
 if __name__ == '__main__':
-    unet = UNet(num_class = 3, retain_dim=True, out_sz=(256, 256))
-    rand_input = torch.randn((4, 256, 256)).view((2, 4, 256, 256))
-    rand_output = torch.randn((3, 256, 256)).view((2, 3, 256, 256))
-    rand_output = (rand_output - torch.min(rand_output)) / (torch.max(rand_output) - torch.min(rand_output))
-    print(torch.max(rand_output), torch.min(rand_output))
-    loss = nn.BCELoss()
-    output = unet(rand_input)
-    print(torch.max(output), torch.min(output))
-    # out = sig(output)
-    print(output.size())
-    loss_output = loss(output, rand_output)
-    print(loss_output.item())
-    # directory = 'models/models/'
-    # test_images = ['/nobackup/users/vinhle/data/blobs/F051_trim_manual_9.pt', '/nobackup/users/vinhle/data/blobs/F030_trim_manual_4.pt']
-    # for model_name in os.listdir(directory):
-    #     print(f'Trying {model_name}')
-    #     checkpoint = torch.load(directory+model_name)
-    #     if 'dropout' in model_name:
-    #         unet = UNet(num_class = 3, retain_dim=True, out_sz = (2048,2048))
-    #     else:
-    #         unet = UNet(num_class = 3, retain_dim=True, out_sz = (2048,2048), dropout=0)
-    #     unet = nn.DataParallel(unet)
-    #     unet.load_state_dict(checkpoint['model_state_dict'])
-    #     unet.eval()
-    #     cuda0 = torch.device('cuda:0')
-    #     unet.to(cuda0)
-    #     for i in range(len(test_images)):
-    #         img = torch.load(test_images[i]).to(cuda0)
-    #         img = img.view((1,4,2048,2048))
-    #         output = unet(img)
-    #         torch.save(output, f'{model_name[:-3]}_{i}.pt')
-    #
-    #     del unet
-    #     del checkpoint
+    rand_inp = torch.randn(1, 3, 256, 256)
+
+    # unet = UNet(num_class = 3, retain_dim=True, out_sz=(256, 256))
+    unet, pp = create_pretrained()
+    # optimizer = torch.optim.Adam(unet.parameters(), lr=0.0001)
+    # output = unet(rand_inp)
+    # print(unet)
+    # print(output.size())
+    # label = torch.randn(1, 3, 256, 256)
+    # loss = nn.MSELoss()(output, label)
+    # optimizer.zero_grad()
+    # loss.backward()
+    # optimizer.step()
+    print(pp)
+    out = unet(rand_inp)
+    print(out.size())
 
 
 

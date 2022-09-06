@@ -6,11 +6,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from torchvision import transforms
 from imageio import volread as imread
 from skimage.filters import threshold_otsu, rank, threshold_local
-from skimage import img_as_ubyte
-from torchvision import transforms
-
+from unet import create_pretrained
 
 def otsu_threshold_channelwise(image):
     mask = []
@@ -87,11 +86,14 @@ def plot_procode_torch(path, img_shape=(2048, 2048, 3), amplify=0, normalize=Fal
             mini = mini.numpy()
             one_channel[:, :, channel] = mini
             axs[channel + 1].imshow(one_channel)
+            axs[channel + 1].axis('off')
             mini = np.reshape(mini, img_shape[0:2])
             combined.append(mini)
         combined = np.stack(combined, -1)
         axs[0].imshow(combined)
+        axs[0].axis('off')
     plt.tight_layout()
+    plt.suptitle(path, y=0.80, fontsize='xx-large')
     if filename:
         plt.savefig(filename)
     else:
@@ -107,7 +109,7 @@ def display_codebook(path):
 
 
 def fixed_blobs(img_shape, v_stride: int, w_stride: int, blob_len: int, v_padding: int = 0,
-                w_padding: int = 0):
+                w_padding: int = 0, boolean: bool = False):
     """
     :param img_shape: tuple/list (h x w)
     :param v_stride: stride vertically between top-left points of blobs
@@ -146,6 +148,9 @@ def fixed_blobs(img_shape, v_stride: int, w_stride: int, blob_len: int, v_paddin
                 end_v = (img_shape[0]) - v_padding
             zeros[j: end_v, i: end_w] = 1
             i += w_stride
+    if boolean:
+        # returns a bool tensor works in torch version > 1.4
+        return zeros > 0
     return zeros
 
 
@@ -232,78 +237,88 @@ def matching_pursuit(x, A, max_iters, thr=1):
     return z
 
 
+def three_channel_grayscale(img, mask):
+    assert img.size() == mask.size()
+    grayscale = img.mean(2)
+    input_img = torch.zeros_like(img)
+    input_img[:,:,0] = input_img[:,:,1] = input_img[:,:,2] = grayscale
+    input_img[mask] = img[mask]
+    return input_img
+
+
+def classification_accuracy(img, label):
+    label = abs(label)
+    mask_over_zero = label.sum(axis=1, keepdim=True) > 0
+    img_max = img.max(axis=1, keepdim=True).indices
+    label_max = label.max(axis=1, keepdim=True).indices
+    acc = img_max == label_max
+    acc *= mask_over_zero
+    return torch.sum(acc)/torch.sum(mask_over_zero)
+
 if __name__ == '__main__':
-    # path = '/nobackup/users/vinhle/data/'
-    # blob_mask = fixed_blobs(img_shape=(2048, 2048), v_stride=100, w_stride=100, blob_len=50, v_padding=100,
-    #                         w_padding=100)
-    # blob_mask = torch.Tensor(blob_mask)
-    # running_diff = 0
-    # for filename in tqdm(os.listdir(path + 'slices/')):
-    #     img = torch.load(path + 'slices/' + filename)
-    #     img_o, r_diff = otsu_threshold_channelwise(img)
-    #     blobs = torch.mul(img_o, blob_mask)
-    #     combined = torch.amax(img, 0).view((1, 2048, 2048))
-    #     inp = torch.cat((combined, blobs))
-    #     running_diff += r_diff
-    #     torch.save(inp, path + 'fixed_blobs_otsu/' + filename)
-    # print(running_diff / len(list(os.listdir(path + 'slices/'))) * 100,
-    #       ' average fraction of image kept with thresholding')
+    # loop through ground truth samples, compute mean, make the grayscale3chan, normalize g.t and normalize grayscale3chan
+    # preprocess = create_pretrained(preprocess_only=True)
+    # path = 'data/downsamp_otsu_truth/'
+    # mask = fixed_blobs((256,256,3), 16, 16, 8, 4, 4, boolean=True)
+    # for filename in tqdm(os.listdir(path)):
+    #     img = torch.load(path + filename)
+    #     img = torch.stack([i for i in img], -1)
+    #     tcg = three_channel_grayscale(img, mask)
+    #     img = img.numpy()
+    #     tcg = tcg.numpy()
+    #     tcg = preprocess(tcg)
+    #     img = preprocess(img)
+    #     tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
+    #     img = torch.Tensor(np.stack([img[:,:,i] for i in range(3)], 0))
+    #     torch.save(tcg, 'data/three_grayscale/' + filename)
+    #     torch.save(img, 'data/three_grayscale_truth/' + filename)
+    i = torch.load('data/three_grayscale/F030_trim_manual_0.pt')
+    j = torch.load('data/three_grayscale_truth/F030_trim_manual_0.pt')
+    k = torch.load('data/downsamp_otsu_truth/F030_trim_manual_0.pt')
+    img = torch.Tensor([[[[1, 2, 3],
+                          [0, 0, 0],
+                          [3, 3, 3],
+                          [0, 0, 0]
+                          ],
+                        [[2, 2, 3],
+                         [0, 0, 0],
+                         [3, 3, 3],
+                         [0, 0, 0]
+                         ],
+                        [[1, 2, 3],
+                         [0, 0, 0],
+                         [3, 3, 3],
+                         [0, 0, 0]
+                         ]
+                        ]])
+    img = torch.concat((img, img), dim=0)
 
-    # img = Image.open("doggo.png")
-    # print(img.size)
-    # convert_tensor = transforms.Compose([transforms.PILToTensor()])
-    # img = convert_tensor(img)
-    # torch.save(img, 'dog.pt')
-    # filename = 'F030_trim_manual_0.pt'
-    # img = torch.load('/nobackup/users/vinhle/data/one_image_truth_downsamp/F030_trim_manual_0.pt')
-    # new_img, running_diff = otsu_threshold_channelwise(img)
-    # torch.save(new_img, '/nobackup/users/vinhle/data/one_img_truth_downsamp_otsu/F030_trim_manual_0.pt')
-    # print(running_diff)
-    plot_procode_torch('/nobackup/users/vinhle/data/one_img_truth_downsamp_otsu/F030_trim_manual_0.pt',
-                       img_shape=(256,256,3), filename='otsu_gt.png')
-    # print(img.size())
-    # resized_img = transforms.Resize(size=(256, 256))(img)
-    # torch.save(resized_img, 'F030_resize.pt')
+    truth = torch.Tensor([[[[1, 2, 3],
+                          [0, 0, 0],
+                          [3, 3, 3],
+                          [0, 0, 0]
+                          ],
+                         [[1, 2, 3],
+                          [0, 0, 0],
+                          [3, 3, 3],
+                          [0, 0, 0]
+                          ],
+                         [[1, 2, 3],
+                          [0, 0, 0],
+                          [3, 3, 4],
+                          [0, 0, 0]
+                          ]
+                         ]])
+    truth = torch.concat([truth, truth], dim=0)
+    print(img, truth)
+    print(classification_accuracy(img, truth))
+    # seq = [i for i in img]
+    # img = torch.stack(seq, -1)
+    # masks = fixed_blobs((256,256,3), 16, 16, 8, 8, 8)
+    # masks = torch.Tensor.bool(masks)
+    # print(img.size(), masks.size())
+    # tcg = three_channel_grayscale(img, masks)
+    # torch.save(tcg, 'tcg.pt')
 
-    # img = torch.load('F050_trim_manual_7.pt')
-    # x,y,z = img.numpy()
-    # fig, axs = plt.subplots(1,3)
-    # for i,j in zip(range(len(axs)),[x,y,z]):
-    #     axs[i].imshow(j, cmap='inferno')
-    # plt.show()
 
-    # img = torch.load('F031_trim_manual_4.pt')
-    # nimg = otsu_threshold_channelwise(img)
-    # x1, y1, z1 = img.numpy()
-    # x, y, z = nimg
-    # fig = plt.figure(constrained_layout=True)
-    # fig.suptitle('Blob Mask')
-    # images = [[x1, y1, z1], [x, y, z]]
-    # subfigs = fig.subfigures(nrows=2, ncols=1)
-    # titles = ['Original', 'Masked']
-    # for row, subfig in enumerate(subfigs):
-    #     subfig.suptitle(titles[row])
-    #     axs = subfig.subplots(nrows=1, ncols=3)
-    #     for col, ax in enumerate(axs):
-    #         i = ax.imshow(images[row][col] * 100, cmap='inferno')
-    #         ax.set_title(f'Channel {col}')
-    # plt.show()
-    # blob_mask = fixed_blobs(img_shape=(2048, 2048), v_stride=100, w_stride=100, blob_len=50, v_padding=100,
-    #                         w_padding=100)
-    # blob_mask = torch.Tensor(blob_mask)
-    # blobs = torch.mul(img, blob_mask)
-    # x, y, z = blobs.numpy()
-    # x1, y1, z1 = img.numpy()
-    # fig = plt.figure(constrained_layout=True)
-    # fig.suptitle('Fixed Blob Mask')
-    # images = [[x1, y1, z1], [x, y, z]]
-    # subfigs = fig.subfigures(nrows=2, ncols=1)
-    # titles = ['Original', 'Masked']
-    # for row, subfig in enumerate(subfigs):
-    #     subfig.suptitle(titles[row])
-    #     axs = subfig.subplots(nrows=1, ncols=3)
-    #     for col, ax in enumerate(axs):
-    #         i = ax.imshow(images[row][col] * 100, cmap='inferno')
-    #         ax.set_title(f'Channel {col}')
-    # plt.show()
 

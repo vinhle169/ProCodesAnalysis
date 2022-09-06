@@ -1,11 +1,13 @@
 import argparse
 from colorization import *
 from unet import *
+from utils import classification_accuracy
 from tqdm import tqdm
 import torch.nn as nn
 from torchvision import ops
 from dataset import ProCodesDataModule
 from torch.nn import MSELoss
+from torch.utils.tensorboard import SummaryWriter
 
 
 # noinspection PyUnboundLocalVariable,PyCallingNonCallable
@@ -27,6 +29,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
     """
     torch.cuda.empty_cache()
     start_time = time.time()
+    writer = SummaryWriter(comment='3ChanGrayscale100_batchsize4')
     train_losses, epoch = [], 0
     if parallel:
         model = nn.DataParallel(model)
@@ -49,39 +52,44 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
     # if continuing from a previous process:
 
     # set up dataloader
-    # z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0, data_type=data_type)
-    input_img = torch.load(train_path[0]+list(os.listdir(train_path[0]))[0])
-    label_img = torch.load(train_path[1]+list(os.listdir(train_path[1]))[0])
-    train_loader = [(input_img, label_img)]
-    # train_loader = z.train_dataloader()
+    z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0.2, data_type=data_type)
+    train_loader = z.train_dataloader()
+    length = len(train_loader)
     for e in tqdm(range(epoch, epochs)):
         running_loss = 0
+        running_classification_acc = 0
         for i, image_label in enumerate(train_loader):
             image, label = image_label
             image = image.to(cuda0)
-            image = image.view((1, 4, 256, 256))
             label = label.to(cuda0)
             # forward pass
-            output = model(image)[0]
+            output = model(image)
             loss = criterion(output, label)
+            running_loss += loss.item()
+            running_classification_acc += classification_accuracy(output, label)
             del image
             del label
-            running_loss += loss.item()
             # Backward and optimize
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        train_losses.append(running_loss / len(train_loader))
-        if (e + 1) % 50 == 0:
+        classification_acc_per_epoch = running_classification_acc / length
+        loss_per_epoch = running_loss / length
+        writer.add_scalar("Loss/train", loss_per_epoch, e)
+        writer.add_scalar("Accuracy/train", classification_acc_per_epoch, e)
+        train_losses.append(loss_per_epoch)
+        if (e + 1) % 10 == 0:
             torch.save({
                 'epoch': e,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
                 'train_losses': train_losses
-            }, model_path + f'{e + 1}_checkpoint_mse_single_downsamp_otsu.tar')
-        print('Epoch [{}/{}], Loss: {:.4f}'.format(e + 1, epochs, loss.item()))
+            }, model_path + f'{e + 1}_test.tar')
+        print('Epoch [{}/{}], Loss: {:.4f}, Accuracy: {:.2f}'.format(e + 1, epochs, loss.item(), classification_acc_per_epoch))
     print((time.time() - start_time)/60, ' minutes to finish')
+    writer.flush()
+    writer.close()
     return train_losses
 
 
@@ -107,7 +115,8 @@ if __name__ == '__main__':
     BCE = nn.BCELoss(reduction='mean')
     if label_path:
         path = [path, label_path]
-    unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=0.05)
+    # unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=0.05)
+    unet, _ = create_pretrained()
     print("BEGIN TRAINING")
-    loss_data = train(unet, path, 0.000001, epochs, batch_size, 'models/unet/', loss_fn=MSE,
+    loss_data = train(unet, path, 0.0001, epochs, batch_size, 'models/unet_test/', loss_fn=MSE,
                       continue_training=model_presave, parallel=True)
