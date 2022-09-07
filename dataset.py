@@ -52,8 +52,8 @@ class ProCodes(torch.utils.data.Dataset):
                 inp = self.transforms(inp)
             inp = torch.Tensor(inp)
             mask = torch.Tensor(mask)
-            inp = inp.view((4, 2048, 2048))
-            mask = mask.view((3, 2048, 2048))
+            inp = inp.view((3, 256, 256))
+            mask = mask.view((3, 256, 256))
             return inp, mask
 
     def __len__(self):

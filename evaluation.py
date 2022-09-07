@@ -1,5 +1,4 @@
 from typing import List, Tuple
-import cmocean
 import matplotlib.pyplot as plt
 import numpy as np
 from unet import *
@@ -234,7 +233,7 @@ class identifiable_submatrices:
                     self.clean_matrices[row_order].append([new_mat, col_order])
 
 
-def generate_model_outputs(model_directory, model_list, input_img_list, output_path=''):
+def generate_model_outputs(model_directory, model_list, input_img_list, output_path='', parallel=True):
     """
     :param model_directory: location of all models being used
     :param model_list: list of models by name being used in above location
@@ -245,15 +244,17 @@ def generate_model_outputs(model_directory, model_list, input_img_list, output_p
     for model_name in tqdm(model_list):
         model_path = model_directory + model_name
         checkpoint = torch.load(model_path)
-        unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=.10)
-        unet = nn.DataParallel(unet)
+        # unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=.10)
+        unet, _ = create_pretrained()
+        if parallel:
+            unet = nn.DataParallel(unet)
         unet.load_state_dict(checkpoint['model_state_dict'])
         unet.eval()
         cuda0 = torch.device('cuda:0')
         unet.to(cuda0)
         for i in range(len(input_img_list)):
             img = torch.load(input_img_list[i]).to(cuda0)
-            img = img.view((1, 4, 256, 256))
+            img = img.view((1, 3, 256, 256))
             output = unet(img)
             print(model_name, model_name[:-4])
             torch.save(output, f'{output_path}{model_name[:-4]}_{i}.pt')
@@ -270,23 +271,32 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, img_size=[20
     :param ground_truth: list of ground truth images
     :return:
     """
-    fig, axs = plt.subplots(len(file_paths) + len(org_img_paths) + len(ground_truth), 4)
+
     row_count = 0
+    output_files = {}
+    for img_name in file_paths:
+        output_files.setdefault(img_name[-4],[])
+        output_files[img_name[-4]].append(img_name)
+    print('num rows:', (1 + 1 + len(output_files[img_name[-4]])) * len(org_img_paths))
+    fig, axs = plt.subplots((1 + 1 + len(output_files[img_name[-4]])) * len(org_img_paths), 4)
     fig.set_figheight(10*len(axs))
-    fig.set_figwidth(40)
+    fig.set_figwidth(50)
     for i in range(len(org_img_paths)):
-        print(i, 'i')
+        print(i, 'ith image---------------------')
         # plot test input
-        imgs_i = [im for im in file_paths if str(i) in im]
         curr_img = torch.load(org_img_paths[i])
         axs[row_count][0].set_ylabel(f"input image", fontsize=40)
-        for channel in range(len(curr_img)):
-            mini = curr_img[channel].view(img_size[0:2]).cpu()
+        for channel in range(len(curr_img)+1):
+            if channel != 0:
+                mini = curr_img[channel-1].view(img_size[0:2]).cpu()
+            else:
+                mini = curr_img.cpu()
             mini = mini.detach()
             mini = mini.numpy()
-            mini *= 10
+            # mini *= 10
             mini = normalize_array(mini)
             if channel == 0:
+                mini = np.stack([i for i in mini], axis=-1)
                 axs[row_count][channel].imshow(mini, vmin=0, vmax=1)
             else:
                 one_channel = np.zeros(img_size)
@@ -304,7 +314,7 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, img_size=[20
             mini = curr_img[channel].view(img_size[0:2]).cpu()
             mini = mini.detach()
             mini = mini.numpy()
-            mini *= 10
+            # mini *= 10
             print(mini.shape)
             mini = normalize_array(mini)
 
@@ -318,24 +328,21 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, img_size=[20
 
         # plot resulting images
         row_count += 1
-
-        for img_p in range(len(imgs_i)):
-            print(row_count)
-            curr_img = torch.load(imgs_i[img_p])[0].cpu()
+        outputs = sorted(output_files[str(i)], key=lambda x: int(x[x.find('/')+1:x.find('_',x.find('/'))]))
+        print(outputs)
+        for img_p in outputs:
+            curr_img = torch.load(img_p)[0].cpu()
             combined = []
-            print(imgs_i[img_p][0:imgs_i[img_p].find('.')])
-            axs[row_count][0].set_ylabel(imgs_i[img_p][10:imgs_i[img_p].find('.')-15], fontsize=50)
+            print(img_p[0:img_p.find('.')])
+            axs[row_count][0].set_ylabel(img_p[img_p.find('/')+1:img_p.find('.')], fontsize=50)
             for channel in range(len(curr_img)):
                 one_channel = np.zeros(img_size)
                 mini = curr_img[channel].view(img_size[0:2]).detach()
 
                 mini = mini.numpy()
-                # print(np.isnan(np.sum(mini)))
-                print(mini.min(), mini.max(), channel)
-                if mini.max() != 0:
+
+                if mini.max() != 0 and mini.min() != mini.max():
                     mini = normalize_array(mini)
-                # print(np.isnan(np.sum(mini)))
-                # print(mini.min(), mini.max())
                 one_channel[:, :, channel] = mini
                 im = axs[row_count][channel + 1].imshow(one_channel, vmin=0, vmax=1)
                 mini = np.reshape(mini, img_size[0:2])
@@ -348,41 +355,30 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, img_size=[20
     cols = ['Combined', 'Channel 0', 'Channel 1', 'Channel 2']
     for ax, col in zip(axs[0], cols):
         ax.set_title(col, fontsize=50)
-    plt.tight_layout()
     # fig.subplots_adjust(right=0.8)
     # cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
     # fig.colorbar(im, cax=cbar_ax)
     plt.setp(axs, xticks=[], yticks=[])
-    plt.savefig('single_image_.png')
+    plt.savefig('single_image.png')
     print('Done~~~~~~~~~~~~~~~~~~~~')
 
 
 if __name__ == '__main__':
-    # model_names = ['160_checkpoint_bce.tar',
-    #                '200_checkpoint_bce_fixed.tar',
-    #                '200_checkpoint_mse_fixed.tar']
-    # output_images = ['archive/bce_0.pt',
-    #                  'archive/bce_1.pt',
-    #                  'archive/bce_fixed_0.pt',
-    #                  'archive/bce_fixed_1.pt',
-    #                  'archive/mse_fixed_0.pt',
-    #                  'archive/mse_fixed_1.pt']
-    # test_images = ['/nobackup/users/vinhle/data/fixed_blobs_otsu/F051_trim_manual_9.pt',
-    #                '/nobackup/users/vinhle/data/fixed_blobs_otsu/F030_trim_manual_4.pt']
-    # actual_images = ['/nobackup/users/vinhle/data/slices/F051_trim_manual_9.pt',
-    #                  '/nobackup/users/vinhle/data/slices/F030_trim_manual_4.pt']
-    # generate_model_outputs('models/model_comparisons/', model_names, test_images, actual_images)
-    # plot_different_outputs(output_images, test_images, actual_images)
 
-    model_names = ['100_checkpoint_mse_single_downsamp_otsu.tar',
-                   '500_checkpoint_mse_single_downsamp_otsu.tar',
-                   '900_checkpoint_mse_single_downsamp_otsu.tar']
-    model_directory = 'models/unet/'
-    actual_images = ['/nobackup/users/vinhle/data/one_img_truth_downsamp_otsu/F030_trim_manual_0.pt']
-    input_image_list = ['/nobackup/users/vinhle/data/one_image_downsamp/F030_trim_manual_0.pt']
-    generate_model_outputs(model_directory, model_names, input_image_list, "one_output/")
+    model_names = [
+                    '10_test.tar',
+                    '20_test.tar',
+                    '60_test.tar',
+                    '100_test.tar'
+                   ]
+
+    model_directory = 'models/unet_test/'
+
+    actual_images = ['data/three_grayscale_truth/F030_trim_manual_0.pt',
+                    ]
+    input_image_list = ['data/three_grayscale/F030_trim_manual_0.pt',]
+    generate_model_outputs(model_directory, model_names, input_image_list, 'outputs/', parallel=True)
     print('---------------generating done---------------------')
-    output_images = sorted(list(f'one_output/{i}' for i in os.listdir('one_output/')))
-
+    output_images = ['outputs/'+i for i in os.listdir('outputs/')]
     plot_different_outputs(output_images, input_image_list, actual_images, img_size=[256, 256, 3])
     print('Done')
