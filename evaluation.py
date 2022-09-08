@@ -245,7 +245,7 @@ def generate_model_outputs(model_directory, model_list, input_img_list, output_p
         model_path = model_directory + model_name
         checkpoint = torch.load(model_path)
         # unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=.10)
-        unet, _ = create_pretrained()
+        unet, _ = create_pretrained('resnet50', 'swsl')
         if parallel:
             unet = nn.DataParallel(unet)
         unet.load_state_dict(checkpoint['model_state_dict'])
@@ -264,7 +264,7 @@ def generate_model_outputs(model_directory, model_list, input_img_list, output_p
         del checkpoint
 
 
-def plot_different_outputs(file_paths, org_img_paths, ground_truth, img_size=[2048, 2048, 3]):
+def plot_different_outputs(file_paths, org_img_paths, ground_truth, name, img_size=[256, 256, 3]):
     """
     :param file_paths: list of paths of output images
     :param org_img_paths: list of input images
@@ -359,26 +359,23 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, img_size=[20
     # cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
     # fig.colorbar(im, cax=cbar_ax)
     plt.setp(axs, xticks=[], yticks=[])
-    plt.savefig('single_image.png')
+    plt.savefig(f'{name}.png')
     print('Done~~~~~~~~~~~~~~~~~~~~')
 
 
 if __name__ == '__main__':
 
     model_names = [
-                    '10_test.tar',
-                    '20_test.tar',
-                    '60_test.tar',
-                    '100_test.tar'
+                    '1000_test.tar',
                    ]
 
-    model_directory = 'models/unet_test/'
+    model_directory = 'models/resnet50_out/'
 
-    actual_images = ['data/three_grayscale_truth/F030_trim_manual_0.pt',
+    actual_images = ['data/three_grayscale_truth/F039_trim_manual_9.pt',
                     ]
-    input_image_list = ['data/three_grayscale/F030_trim_manual_0.pt',]
+    input_image_list = ['data/three_grayscale/F039_trim_manual_9.pt', ]
     generate_model_outputs(model_directory, model_names, input_image_list, 'outputs/', parallel=True)
     print('---------------generating done---------------------')
     output_images = ['outputs/'+i for i in os.listdir('outputs/')]
-    plot_different_outputs(output_images, input_image_list, actual_images, img_size=[256, 256, 3])
+    plot_different_outputs(output_images, input_image_list, actual_images, 'RESNET50', img_size=[256, 256, 3])
     print('Done')

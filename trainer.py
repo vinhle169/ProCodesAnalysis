@@ -29,7 +29,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
     """
     torch.cuda.empty_cache()
     start_time = time.time()
-    writer = SummaryWriter(comment='3ChanGrayscale100_batchsize4')
+    writer = SummaryWriter(comment='RESNET50 1000 E 2')
     train_losses, epoch = [], 0
     if parallel:
         model = nn.DataParallel(model)
@@ -59,14 +59,15 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
         running_loss = 0
         running_classification_acc = 0
         for i, image_label in enumerate(train_loader):
-            image, label = image_label
+            image, label, zero_mask = image_label
             image = image.to(cuda0)
             label = label.to(cuda0)
+            zero_mask = zero_mask.to(cuda0)
             # forward pass
             output = model(image)
             loss = criterion(output, label)
             running_loss += loss.item()
-            running_classification_acc += classification_accuracy(output, label)
+            running_classification_acc += classification_accuracy(output, label, zero_mask)
             del image
             del label
             # Backward and optimize
@@ -78,7 +79,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
         writer.add_scalar("Loss/train", loss_per_epoch, e)
         writer.add_scalar("Accuracy/train", classification_acc_per_epoch, e)
         train_losses.append(loss_per_epoch)
-        if (e + 1) % 10 == 0:
+        if (e + 1) % 100 == 0:
             torch.save({
                 'epoch': e,
                 'model_state_dict': model.state_dict(),
@@ -116,7 +117,7 @@ if __name__ == '__main__':
     if label_path:
         path = [path, label_path]
     # unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=0.05)
-    unet, _ = create_pretrained()
+    unet, _ = create_pretrained('resnet50', 'swsl')
     print("BEGIN TRAINING")
-    loss_data = train(unet, path, 0.0001, epochs, batch_size, 'models/unet_test/', loss_fn=MSE,
+    loss_data = train(unet, path, 0.0001, epochs, batch_size, 'models/resnet50_out/', loss_fn=MSE,
                       continue_training=model_presave, parallel=True)

@@ -13,6 +13,10 @@ from unet import create_pretrained
 
 def otsu_threshold_channelwise(image):
     mask = []
+    if image.size()[0] == 1:
+        image = image[0]
+    image = image.detach()
+    image = image.cpu()
     image = image.numpy()
     for channel in image:
         thresh = threshold_otsu(channel)
@@ -50,18 +54,23 @@ def load_codebook(path, values=True):
     return codebook
 
 
+def normalize_array_t(array):
+    return (array - torch.min(array)) / (torch.max(array) - torch.min(array))
+
 def normalize_array(array):
     return (array - np.min(array)) / (np.max(array) - np.min(array))
 
 
 def plot_procode_torch(path, img_shape=(2048, 2048, 3), amplify=0, normalize=False, filename=None):
-    img = torch.load(path)
+    if type(path) is str:
+        img = torch.load(path)
+    else:
+        img = path
+        path = 'No Name'
     if amplify:
         print('amplified')
         img *= amplify
         # normalize to max of 1
-    if normalize:
-        img /= img.max()
     if img.size()[0] == 1:
         img = img[0]
     fig, axs = plt.subplots(1, 4)
@@ -72,6 +81,8 @@ def plot_procode_torch(path, img_shape=(2048, 2048, 3), amplify=0, normalize=Fal
             one_channel = np.zeros(img_shape)
             mini = img[channel].view(img_shape[0:2]).detach()
             mini = mini.numpy()
+            if normalize:
+                mini = normalize_array(mini)
             if channel == 0:
                 axs[channel].imshow(mini)
                 continue
@@ -84,6 +95,8 @@ def plot_procode_torch(path, img_shape=(2048, 2048, 3), amplify=0, normalize=Fal
             one_channel = np.zeros(img_shape)
             mini = img[channel].view(img_shape[0:2]).detach()
             mini = mini.numpy()
+            if normalize:
+                mini = normalize_array(mini)
             one_channel[:, :, channel] = mini
             axs[channel + 1].imshow(one_channel)
             axs[channel + 1].axis('off')
@@ -246,72 +259,61 @@ def three_channel_grayscale(img, mask):
     return input_img
 
 
-def classification_accuracy(img, label):
-    label = abs(label)
-    mask_over_zero = label.sum(axis=1, keepdim=True) > 0
+def preprocess_and_create_3_channel(ground_truth_path, mask, preprocess_fn, train_path, train_truth_path):
+    for filename in tqdm(os.listdir(path)):
+        img = torch.load(path + filename).view((1,3,256,256))
+        img = torch.stack([i for i in img], -1)
+        tcg = three_channel_grayscale(img, mask)
+        img = img.numpy()
+        tcg = tcg.numpy()
+        tcg = preprocess_fn(tcg)
+        img = preprocess_fn(img)
+        tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
+        img = torch.Tensor(np.stack([img[:,:,i] for i in range(3)], 0))
+
+        torch.save(tcg, train_path + filename)
+        torch.save(img, train_truth_path + filename)
+
+
+def classification_accuracy(img, label, mask_over_zero):
     img_max = img.max(axis=1, keepdim=True).indices
     label_max = label.max(axis=1, keepdim=True).indices
     acc = img_max == label_max
     acc *= mask_over_zero
     return torch.sum(acc)/torch.sum(mask_over_zero)
 
+
 if __name__ == '__main__':
     # loop through ground truth samples, compute mean, make the grayscale3chan, normalize g.t and normalize grayscale3chan
-    # preprocess = create_pretrained(preprocess_only=True)
-    # path = 'data/downsamp_otsu_truth/'
+    output = torch.load('data/three_grayscale_truth/F039_trim_manual_9.pt')
+    print(output.size())
+    output = output.detach()
+    output = output.cpu()
+    output = torch.stack([normalize_array_t(i) for i in output], axis=0)
+    output = output.view((1,3,256,256))
+    # output, _ = otsu_threshold_channelwise(output)
+    plot_procode_torch(output, img_shape=(256,256,3))
     # mask = fixed_blobs((256,256,3), 16, 16, 8, 4, 4, boolean=True)
     # for filename in tqdm(os.listdir(path)):
-    #     img = torch.load(path + filename)
-    #     img = torch.stack([i for i in img], -1)
-    #     tcg = three_channel_grayscale(img, mask)
-    #     img = img.numpy()
-    #     tcg = tcg.numpy()
-    #     tcg = preprocess(tcg)
-    #     img = preprocess(img)
-    #     tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
-    #     img = torch.Tensor(np.stack([img[:,:,i] for i in range(3)], 0))
-    #     torch.save(tcg, 'data/three_grayscale/' + filename)
-    #     torch.save(img, 'data/three_grayscale_truth/' + filename)
-    i = torch.load('data/three_grayscale/F030_trim_manual_0.pt')
-    j = torch.load('data/three_grayscale_truth/F030_trim_manual_0.pt')
-    k = torch.load('data/downsamp_otsu_truth/F030_trim_manual_0.pt')
-    img = torch.Tensor([[[[1, 2, 3],
-                          [0, 0, 0],
-                          [3, 3, 3],
-                          [0, 0, 0]
-                          ],
-                        [[2, 2, 3],
-                         [0, 0, 0],
-                         [3, 3, 3],
-                         [0, 0, 0]
-                         ],
-                        [[1, 2, 3],
-                         [0, 0, 0],
-                         [3, 3, 3],
-                         [0, 0, 0]
-                         ]
-                        ]])
-    img = torch.concat((img, img), dim=0)
+    #     img = torch.load(path + filename).view((1,3,256,256))
+    #     label = torch.abs(img)
+    #     mask_over_zero = label.sum(axis=1, keepdim=True) > 0
+    #     mask_over_zero = mask_over_zero[0]
+    #     print(mask_over_zero.size())
+        # img = torch.stack([i for i in img], -1)
+        # tcg = three_channel_grayscale(img, mask)
+        # img = img.numpy()
+        # tcg = tcg.numpy()
+        # tcg = preprocess(tcg)
+        # img = preprocess(img)
+        # tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
+        # img = torch.Tensor(np.stack([img[:,:,i] for i in range(3)], 0))
 
-    truth = torch.Tensor([[[[1, 2, 3],
-                          [0, 0, 0],
-                          [3, 3, 3],
-                          [0, 0, 0]
-                          ],
-                         [[1, 2, 3],
-                          [0, 0, 0],
-                          [3, 3, 3],
-                          [0, 0, 0]
-                          ],
-                         [[1, 2, 3],
-                          [0, 0, 0],
-                          [3, 3, 4],
-                          [0, 0, 0]
-                          ]
-                         ]])
-    truth = torch.concat([truth, truth], dim=0)
-    print(img, truth)
-    print(classification_accuracy(img, truth))
+        # torch.save(tcg, 'data/three_grayscale/' + filename)
+        # torch.save(img, 'data/three_grayscale_truth/' + filename)
+        # torch.save(mask_over_zero, 'data/zero_mask/' + filename)
+
+
     # seq = [i for i in img]
     # img = torch.stack(seq, -1)
     # masks = fixed_blobs((256,256,3), 16, 16, 8, 8, 8)

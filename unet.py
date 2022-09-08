@@ -124,8 +124,8 @@ def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_ch
     if preprocess_only:
         return preprocess_fn
     model = smp.Unet(
-        encoder_name=encoder_name,  # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
-        encoder_weights=encoder_weights,  # use `imagenet` pre-trained weights for encoder initialization
+        encoder_name=encoder_name,  # resnet34 resnet50
+        encoder_weights=encoder_weights,  # use 'imagenet' 'swsl'
         in_channels=in_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
         classes=classes,  # model output channels (number of classes in your dataset)
         activation=None  # type of activation function for the final layer
@@ -134,10 +134,11 @@ def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_ch
 
 
 if __name__ == '__main__':
-    rand_inp = torch.randn(1, 3, 256, 256)
+    rand_inp = torch.randn(256, 256, 3)
 
     # unet = UNet(num_class = 3, retain_dim=True, out_sz=(256, 256))
-    unet, pp = create_pretrained()
+    # unet, pp = create_pretrained('resnet50', 'ssl')
+    unet, pp = create_pretrained('resnet50', 'swsl')
     # optimizer = torch.optim.Adam(unet.parameters(), lr=0.0001)
     # output = unet(rand_inp)
     # print(unet)
@@ -148,8 +149,9 @@ if __name__ == '__main__':
     # loss.backward()
     # optimizer.step()
     print(pp)
-    out = unet(rand_inp)
-    print(out.size())
+    rand_inp = pp(rand_inp)
+    # out = unet(rand_inp)
+    # print(out.size())
 
 
 
