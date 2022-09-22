@@ -1,15 +1,15 @@
 import os
 import seaborn as sns
 import torch
-from PIL import Image
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from torchvision import transforms
 from imageio import volread as imread
-from skimage.filters import threshold_otsu, rank, threshold_local
+from skimage.filters import threshold_otsu
 from unet import create_pretrained
+from torchvision import transforms
+
 
 def otsu_threshold_channelwise(image):
     mask = []
@@ -56,6 +56,7 @@ def load_codebook(path, values=True):
 
 def normalize_array_t(array):
     return (array - torch.min(array)) / (torch.max(array) - torch.min(array))
+
 
 def normalize_array(array):
     return (array - np.min(array)) / (np.max(array) - np.min(array))
@@ -259,68 +260,75 @@ def three_channel_grayscale(img, mask):
     return input_img
 
 
-def preprocess_and_create_3_channel(ground_truth_path, mask, preprocess_fn, train_path, train_truth_path):
-    for filename in tqdm(os.listdir(path)):
-        img = torch.load(path + filename).view((1,3,256,256))
-        img = torch.stack([i for i in img], -1)
-        tcg = three_channel_grayscale(img, mask)
-        img = img.numpy()
-        tcg = tcg.numpy()
-        tcg = preprocess_fn(tcg)
-        img = preprocess_fn(img)
-        tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
-        img = torch.Tensor(np.stack([img[:,:,i] for i in range(3)], 0))
-
-        torch.save(tcg, train_path + filename)
-        torch.save(img, train_truth_path + filename)
-
-
 def classification_accuracy(img, label, mask_over_zero):
     img_max = img.max(axis=1, keepdim=True).indices
     label_max = label.max(axis=1, keepdim=True).indices
     acc = img_max == label_max
-    acc *= mask_over_zero
+    acc = acc.float()
+    acc *= mask_over_zero.float()
     return torch.sum(acc)/torch.sum(mask_over_zero)
 
 
+def preprocess_and_create_data(data_path: str, output_path: str, output_size: tuple, preprocess):
+    '''
+    Function to preprocess and create new training data
+    :param data_path:
+    :param output_path:
+    :param output_size:
+    :param preprocess: a preprocessing function
+    :return:
+    '''
+    mask = fixed_blobs(output_size[::-1], int(output_size[1]/16), int(output_size[1]/16),
+                       int(output_size[1]/32), int(output_size[1]/64), int(output_size[1]/64), boolean=True)
+    resizer = transforms.Resize(size=output_size[1:])
+    for filename in tqdm(os.listdir(data_path)):
+        org_img = torch.load(data_path+filename)
+        img = resizer(org_img)
+        label = torch.clone(img)
+        # get mask covering each of the non-zero points
+        abs = torch.abs(label)
+        abs, _ = otsu_threshold_channelwise(abs)
+        mask_over_zero = abs.sum(axis=0, keepdim=True)
+        # make three channel grayscale image
+        img = torch.stack([i for i in img], -1)
+        tcg = three_channel_grayscale(img, mask)
+        # put images through preprocessing
+        img = img.numpy()
+        tcg = tcg.numpy()
+        img, tcg = preprocess(img), preprocess(tcg)
+        img = torch.Tensor(np.stack([img[:, :, i] for i in range(3)], 0))
+        tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
+        torch.save(img, output_path + 'truth/' + filename)
+        torch.save(tcg, output_path + 'train/' + filename)
+        torch.save(mask_over_zero, output_path + 'classification_mask/' + filename)
+    print('~Finished!~')
+
+
+def testfn():
+    a = 123
+    b = 321
+    def tester(x):
+        return a+b
+    return tester(1)
+
 if __name__ == '__main__':
     # loop through ground truth samples, compute mean, make the grayscale3chan, normalize g.t and normalize grayscale3chan
-    output = torch.load('data/three_grayscale_truth/F039_trim_manual_9.pt')
-    print(output.size())
-    output = output.detach()
-    output = output.cpu()
-    output = torch.stack([normalize_array_t(i) for i in output], axis=0)
-    output = output.view((1,3,256,256))
-    # output, _ = otsu_threshold_channelwise(output)
-    plot_procode_torch(output, img_shape=(256,256,3))
-    # mask = fixed_blobs((256,256,3), 16, 16, 8, 4, 4, boolean=True)
-    # for filename in tqdm(os.listdir(path)):
-    #     img = torch.load(path + filename).view((1,3,256,256))
-    #     label = torch.abs(img)
-    #     mask_over_zero = label.sum(axis=1, keepdim=True) > 0
-    #     mask_over_zero = mask_over_zero[0]
-    #     print(mask_over_zero.size())
-        # img = torch.stack([i for i in img], -1)
-        # tcg = three_channel_grayscale(img, mask)
-        # img = img.numpy()
-        # tcg = tcg.numpy()
-        # tcg = preprocess(tcg)
-        # img = preprocess(img)
-        # tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
-        # img = torch.Tensor(np.stack([img[:,:,i] for i in range(3)], 0))
 
-        # torch.save(tcg, 'data/three_grayscale/' + filename)
-        # torch.save(img, 'data/three_grayscale_truth/' + filename)
-        # torch.save(mask_over_zero, 'data/zero_mask/' + filename)
+    # preprocess_fn = create_pretrained('resnet50', 'swsl', preprocess_only=True)
+    # data_path = '/nobackup/users/vinhle/data/slices/'
+    # output_path = '/nobackup/users/vinhle/data/2048/'
+    # try:
+    #     os.mkdir(output_path[:-1])
+    #     os.mkdir(output_path+'train')
+    #     os.mkdir(output_path + 'truth')
+    #     os.mkdir(output_path + 'classification_mask')
+    # except:
+    #     pass
+    # output_size = (3,2048,2048)
+    # preprocess_and_create_data(data_path, output_path, output_size, preprocess_fn)
+    x = 9
+    print(bin(x))
 
-
-    # seq = [i for i in img]
-    # img = torch.stack(seq, -1)
-    # masks = fixed_blobs((256,256,3), 16, 16, 8, 8, 8)
-    # masks = torch.Tensor.bool(masks)
-    # print(img.size(), masks.size())
-    # tcg = three_channel_grayscale(img, masks)
-    # torch.save(tcg, 'tcg.pt')
 
 
 

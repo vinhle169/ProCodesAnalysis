@@ -47,15 +47,17 @@ class ProCodes(torch.utils.data.Dataset):
             return image, label
         elif self.data_type == 'unet':
             inp_path, mask_path = self.paths[0][idx], self.paths[1][idx]
-            zero_mask_path = f'data/zero_mask/{inp_path[inp_path.rfind("/") + 1:]}'
+            i = inp_path.find("train")
+            zero_mask_path = f'{inp_path[:i]}/classification_mask/{inp_path[inp_path.rfind("/") + 1:]}'
             zero_mask = torch.load(zero_mask_path)
             inp, mask = torch.load(inp_path), torch.load(mask_path)
             if self.transforms:
                 inp = self.transforms(inp)
             inp = torch.Tensor(inp)
             mask = torch.Tensor(mask)
-            inp = inp.view((3, 256, 256))
-            mask = mask.view((3, 256, 256))
+            size = inp.size()[1]
+            inp = inp.view((3, size, size))
+            mask = mask.view((3, size, size))
             return inp, mask, zero_mask
 
     def __len__(self):
@@ -91,16 +93,19 @@ class ProCodesDataModule(pl.LightningDataModule):
             self.items = [self.data_dir + filename for filename in os.listdir(self.data_dir)]
         assert data_dir is not None, \
             "Path to data folder is required"
-        self.setup('fit')
+        self.setup()
 
     def setup(self, stage: str = None):
         if self.data_type == 'unet':
             self.xtrain, self.xtest, self.ytrain, self.ytest = train_test_split(self.items[0], self.items[1], test_size=self.test_size)
+            # want val size == test size
+            self.xval, self.xtest, self.yval, self.ytest = train_test_split(self.xtest, self.ytest, test_size=0.5)
             print("TEST SET EXAMPLES: ", self.xtest)
             if stage in (None, "test"):
                 self.test = ProCodes([self.xtest, self.ytest], data_type=self.data_type)
             if stage in (None, "fit"):
                 self.train = ProCodes([self.xtrain, self.ytrain], transform=self.transform, data_type=self.data_type)
+                self.val = ProCodes([self.xval, self.yval], transform=self.transform, data_type=self.data_type)
         else:
             self.train, self.test = train_test_split(self.items, test_size=self.test_size)
             if stage in (None, "test"):
@@ -110,6 +115,9 @@ class ProCodesDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train, batch_size=self.batch_size)
+
+    def validation_dataloader(self):
+        return torch.utils.data.DataLoader(self.val, batch_size=self.batch_size)
 
     def test_dataloader(self):
         return torch.utils.data.DataLoader(self.test, batch_size=self.batch_size)
