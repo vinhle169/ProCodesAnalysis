@@ -143,7 +143,7 @@ if __name__ == '__main__':
     # unet, pp = create_pretrained('resnet50', 'ssl')
     unet, pp = create_pretrained('resnet50', 'swsl')
     optimizer = torch.optim.Adam(unet.parameters(), lr=0.0001)
-    lossfn = nn.MSELoss(reduction='mean')
+    lossfn = nn.BCEWithLogitsLoss(reduction='mean')
     out = unet(rand_inp)
     loss = lossfn(out, label)
     optimizer.zero_grad()

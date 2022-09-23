@@ -29,7 +29,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
     """
     torch.cuda.empty_cache()
     start_time = time.time()
-    writer = SummaryWriter(comment='RESNET50 test E 2')
+    writer = SummaryWriter(comment='UNET_BCE')
     epoch = 0
     if parallel:
         model = nn.DataParallel(model)
@@ -60,7 +60,8 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
     length_train = len(train_loader)
     length_val = len(val_loader)
     es_counter = 0
-    best_loss = None
+    best_loss, best_e = None, 0
+    best_model, best_optim = None, None
     for e in tqdm(range(epoch, epochs)):
         running_loss = 0
         running_classification_acc = 0
@@ -119,20 +120,26 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
         # Check for early stopping
         if best_loss is None:
             best_loss = -val_loss_per_epoch
+            best_model = model.state_dict()
+            best_optim = optimizer.state_dict()
+            best_e = e
         elif -val_loss_per_epoch < best_loss:
             es_counter += 1
             if es_counter > early_stop_max:
                 print("Early Stop Initiated")
                 torch.save({
-                    'epoch': e,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss,
-                }, model_path + f'{e + 1}_test.tar')
+                    'epoch': best_e,
+                    'model_state_dict': best_model,
+                    'optimizer_state_dict': best_optim,
+                    'loss': -best_loss,
+                }, model_path + f'{best_e}_best_ES.tar')
                 break
         else:
-            best_loss = -val_loss_per_epoch
             es_counter = 0
+            best_loss = -val_loss_per_epoch
+            best_model = model.state_dict()
+            best_optim = optimizer.state_dict()
+            best_e = e
     print((time.time() - start_time)/60, ' minutes to finish')
     writer.flush()
     writer.close()
@@ -158,11 +165,11 @@ if __name__ == '__main__':
     model_presave = args.model
     label_path = args.label_path
     MSE = MSELoss(reduction='mean')
-    BCE = nn.BCELoss(reduction='mean')
+    BCE = nn.BCEWithLogitsLoss(reduction='mean')
     if label_path:
         path = [path, label_path]
     # unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=0.05)
     unet, _ = create_pretrained('resnet50', 'swsl')
     print("BEGIN TRAINING")
-    loss_data = train(unet, path, 0.0001, epochs, batch_size, 'models/unet/', early_stop_max=100, loss_fn=MSE,
+    loss_data = train(unet, path, 0.0001, epochs, batch_size, 'models/unet/', early_stop_max=100, loss_fn=BCE,
                       continue_training=model_presave, parallel=True)
