@@ -366,41 +366,22 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, name, img_si
 if __name__ == '__main__':
 
     model_names = [
-                    '2048.tar'
+                    '500_test.tar',
+                    '1000_test.tar',
+                    '1500_test.tar','2000_test.tar'
                    ]
 
     model_directory = 'models/unet/'
+    # checkpoint = torch.load(model_directory+model_names[0])
+    # input_image_list = checkpoint['test_images']
+    input_image_list = ['/nobackup/users/vinhle/data/256_zmax/train/F030.pt']
+    actual_images = [i.replace('train','truth') for i in input_image_list]
+    # input_image_list = ['/nobackup/users/vinhle/data/512bce/truth/F041_trim_manual_1.pt',
+    #     '/home/vinhle/procodes/code/outputs/best_BCE_normalized_512_single_0.pt',]
+    generate_model_outputs(model_directory, model_names, actual_images, img_size=(1,3,256,256), output_path='outputs/', parallel=True)
+    print('---------------generating done---------------------')
+    output_images = ['outputs/'+i for i in os.listdir('outputs/')]
+    plot_different_outputs(output_images, input_image_list, actual_images, 'test', img_size=[256, 256, 3])
 
-    actual_images = [
-                     '/nobackup/users/vinhle/data/2048/train/F049_trim_manual_6.pt',
-                    ]
-    input_image_list = ['/home/vinhle/procodes/code/outputs/2048_0.pt', ]
-    # generate_model_outputs(model_directory, model_names, input_image_list, img_size=(1,3,2048,2048), output_path='outputs/', parallel=True)
-    # print('---------------generating done---------------------')
-    # output_images = ['outputs/'+i for i in os.listdir('outputs/')]
-    # plot_different_outputs(output_images, input_image_list, actual_images, 'RESNET50', img_size=[256, 256, 3])
-    # print('Done')
-    fig, axs = plt.subplots(1,4)
-    curr_img = torch.load(input_image_list[0])
-    if curr_img.size()[0] == 1:
-        curr_img = curr_img[0]
-    print(curr_img.size())
-    for channel in range(len(curr_img) + 1):
-        if channel != 0:
-            mini = curr_img[channel - 1].view(2048, 2048).cpu()
-        else:
-            mini = curr_img.cpu()
-        mini = mini.detach()
-        mini = mini.numpy()
-        mini = normalize_array(mini)
-        if channel == 0:
-            mini = np.stack([i for i in mini], axis=-1)
-            axs[channel].imshow(mini, vmin=0, vmax=np.max(mini))
-        else:
-            one_channel = np.zeros((2048, 2048,3))
-            one_channel[:, :, channel - 1] = mini
-            axs[channel].imshow(one_channel, vmin=0, vmax=np.max(mini))
-    plt.setp(axs, xticks=[], yticks=[])
-    plt.savefig('2048.png')
     print('--------------- done---------------------')
 

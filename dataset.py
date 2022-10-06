@@ -48,8 +48,8 @@ class ProCodes(torch.utils.data.Dataset):
         elif self.data_type == 'unet':
             inp_path, mask_path = self.paths[0][idx], self.paths[1][idx]
             i = inp_path.find("train")
-            zero_mask_path = f'{inp_path[:i]}/classification_mask/{inp_path[inp_path.rfind("/") + 1:]}'
-            zero_mask = torch.load(zero_mask_path)
+            # zero_mask_path = f'{inp_path[:i]}/classification_mask/{inp_path[inp_path.rfind("/") + 1:]}'
+            # zero_mask = torch.load(zero_mask_path)
             inp, mask = torch.load(inp_path), torch.load(mask_path)
             if self.transforms:
                 inp = self.transforms(inp)
@@ -58,7 +58,8 @@ class ProCodes(torch.utils.data.Dataset):
             size = inp.size()[1]
             inp = inp.view((3, size, size))
             mask = mask.view((3, size, size))
-            return inp, mask, zero_mask
+            # return inp, mask, zero_mask
+            return inp, mask
 
     def __len__(self):
         if self.data_type == 'cnet':

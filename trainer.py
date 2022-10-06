@@ -29,7 +29,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
     """
     torch.cuda.empty_cache()
     start_time = time.time()
-    writer = SummaryWriter(comment='UNET_BCE')
+    writer = SummaryWriter(comment='identity_test')
     epoch = 0
     if parallel:
         model = nn.DataParallel(model)
@@ -66,80 +66,84 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
         running_loss = 0
         running_classification_acc = 0
         for i, image_label in enumerate(train_loader):
-            image, label, zero_mask = image_label
+            # image, label, zero_mask = image_label
+            image, label = image_label
             image = image.to(cuda0)
             label = label.to(cuda0)
-            zero_mask = zero_mask.to(cuda0)
+            # zero_mask = zero_mask.to(cuda0)
             # forward pass
             output = model(image)
             loss = criterion(output, label)
             running_loss += loss.item()
-            running_classification_acc += classification_accuracy(output, label, zero_mask)
+            # running_classification_acc += classification_accuracy(output, label, zero_mask)
             del image
             del label
-            del zero_mask
+            # del zero_mask
             # Backward and optimize
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
         running_val_loss = 0
-        running_classification_val_acc = 0
-        for i, image_label in enumerate(val_loader):
-            image, label, zero_mask = image_label
-            image = image.to(cuda0)
-            label = label.to(cuda0)
-            zero_mask = zero_mask.to(cuda0)
-            # forward pass
-            output = model(image)
-            loss_v = criterion(output, label)
-            running_val_loss += loss_v.item()
-            running_classification_val_acc += classification_accuracy(output, label, zero_mask)
-            del image
-            del label
+        # running_classification_val_acc = 0
+        # for i, image_label in enumerate(val_loader):
+        #     image, label, zero_mask = image_label
+        #     image = image.to(cuda0)
+        #     label = label.to(cuda0)
+        #     zero_mask = zero_mask.to(cuda0)
+        #     # forward pass
+        #     output = model(image)
+        #     loss_v = criterion(output, label)
+        #     running_val_loss += loss_v.item()
+        #     running_classification_val_acc += classification_accuracy(output, label, zero_mask)
+        #     del image
+        #     del label
 
-        classification_val_acc_per_epoch = running_classification_val_acc / length_val
+        # classification_val_acc_per_epoch = running_classification_val_acc / length_val
         val_loss_per_epoch = running_val_loss / length_val
 
-        classification_acc_per_epoch = running_classification_acc / length_train
+        # classification_acc_per_epoch = running_classification_acc / length_train
         loss_per_epoch = running_loss / length_train
 
         writer.add_scalar("Loss/train", loss_per_epoch, e)
-        writer.add_scalar("Accuracy/train", classification_acc_per_epoch, e)
-        writer.add_scalar("Loss/val", val_loss_per_epoch, e)
-        writer.add_scalar("Accuracy/val", classification_val_acc_per_epoch, e)
+        # writer.add_scalar("Accuracy/train", classification_acc_per_epoch, e)
+        # writer.add_scalar("Loss/val", val_loss_per_epoch, e)
+        # writer.add_scalar("Accuracy/val", classification_val_acc_per_epoch, e)
         if (e + 1) % 100 == 0:
             torch.save({
                 'epoch': e,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
+                'test_images':z.xtest
             }, model_path + f'{e + 1}_test.tar')
-        print('Epoch [{}/{}], Loss: {:.4f}, Accuracy: {:.3f}, Val Loss: {:.4f}, Val Accuracy: {:.3f}'.format(e + 1,
-            epochs, loss_per_epoch, classification_acc_per_epoch, val_loss_per_epoch, classification_val_acc_per_epoch))
+        # print('Epoch [{}/{}], Loss: {:.6f}, Accuracy: {:.3f}, Val Loss: {:.4f}, Val Accuracy: {:.3f}'.format(e + 1,
+        #     epochs, loss_per_epoch, classification_acc_per_epoch, val_loss_per_epoch, classification_val_acc_per_epoch))
+        print('Epoch [{}/{}], Loss: {:.6f}'.format(e + 1, epochs,loss_per_epoch))
         # Check for early stopping
-        if best_loss is None:
-            best_loss = -val_loss_per_epoch
-            best_model = model.state_dict()
-            best_optim = optimizer.state_dict()
-            best_e = e
-        elif -val_loss_per_epoch < best_loss:
-            es_counter += 1
-            if es_counter > early_stop_max:
-                print("Early Stop Initiated")
-                torch.save({
-                    'epoch': best_e,
-                    'model_state_dict': best_model,
-                    'optimizer_state_dict': best_optim,
-                    'loss': -best_loss,
-                }, model_path + f'{best_e}_best_ES.tar')
-                break
-        else:
-            es_counter = 0
-            best_loss = -val_loss_per_epoch
-            best_model = model.state_dict()
-            best_optim = optimizer.state_dict()
-            best_e = e
+        # if best_loss is None:
+        #     best_loss = -val_loss_per_epoch
+        #     best_model = model.state_dict()
+        #     best_optim = optimizer.state_dict()
+        #     best_e = e + 1
+        # elif -val_loss_per_epoch < best_loss:
+        #     es_counter += 1
+        #     if es_counter > early_stop_max:
+        #         print("Early Stop Initiated")
+        #         torch.save({
+        #             'epoch': best_e,
+        #             'model_state_dict': best_model,
+        #             'optimizer_state_dict': best_optim,
+        #             'loss': -best_loss,
+        #             'test_images': z.xtest
+        #         }, model_path + f'{best_e}_best_ES.tar')
+        #         break
+        # else:
+        #     es_counter = 0
+        #     best_loss = -val_loss_per_epoch
+        #     best_model = model.state_dict()
+        #     best_optim = optimizer.state_dict()
+        #     best_e = e + 1
     print((time.time() - start_time)/60, ' minutes to finish')
     writer.flush()
     writer.close()
@@ -171,5 +175,5 @@ if __name__ == '__main__':
     # unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=0.05)
     unet, _ = create_pretrained('resnet50', 'swsl')
     print("BEGIN TRAINING")
-    loss_data = train(unet, path, 0.0001, epochs, batch_size, 'models/unet/', early_stop_max=100, loss_fn=BCE,
+    loss_data = train(unet, path, 0.0005, epochs, batch_size, 'models/unet/', early_stop_max=1000, loss_fn=MSE,
                       continue_training=model_presave, parallel=True)

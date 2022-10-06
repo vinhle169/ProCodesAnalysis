@@ -9,9 +9,14 @@ from imageio import volread as imread
 from skimage.filters import threshold_otsu
 from unet import create_pretrained
 from torchvision import transforms
+import skimage
+import skimage.io
+import skimage.color
+import skimage.filters
+import skimage.measure
+from skimage import morphology
 
-
-def otsu_threshold_channelwise(image):
+def otsu_threshold_channelwise(image, thresh_scale: float = 1.0):
     mask = []
     if image.size()[0] == 1:
         image = image[0]
@@ -19,7 +24,7 @@ def otsu_threshold_channelwise(image):
     image = image.cpu()
     image = image.numpy()
     for channel in image:
-        thresh = threshold_otsu(channel)
+        thresh = threshold_otsu(channel) * thresh_scale
         new_ch = channel > thresh
         mask.append(new_ch)
     mask = np.array(mask)
@@ -269,7 +274,7 @@ def classification_accuracy(img, label, mask_over_zero):
     return torch.sum(acc)/torch.sum(mask_over_zero)
 
 
-def preprocess_and_create_data(data_path: str, output_path: str, output_size: tuple, preprocess):
+def preprocess_and_create_data(data_path: str, output_path: str, output_size: tuple, preprocess, thresh_scale: float=1.0):
     '''
     Function to preprocess and create new training data
     :param data_path:
@@ -290,13 +295,12 @@ def preprocess_and_create_data(data_path: str, output_path: str, output_size: tu
         abs, _ = otsu_threshold_channelwise(abs)
         mask_over_zero = abs.sum(axis=0, keepdim=True)
         # make three channel grayscale image
-        img = torch.stack([i for i in img], -1)
-        tcg = three_channel_grayscale(img, mask)
+        img = torch.stack([normalize_array_t(i) for i in img])
+        buffer = torch.stack([i for i in img], -1)
+        tcg = three_channel_grayscale(buffer, mask)
         # put images through preprocessing
-        img = img.numpy()
         tcg = tcg.numpy()
-        img, tcg = preprocess(img), preprocess(tcg)
-        img = torch.Tensor(np.stack([img[:, :, i] for i in range(3)], 0))
+        tcg = preprocess(tcg)
         tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
         torch.save(img, output_path + 'truth/' + filename)
         torch.save(tcg, output_path + 'train/' + filename)
@@ -304,30 +308,116 @@ def preprocess_and_create_data(data_path: str, output_path: str, output_size: tu
     print('~Finished!~')
 
 
-def testfn():
-    a = 123
-    b = 321
-    def tester(x):
-        return a+b
-    return tester(1)
+def preprocess_main(data_path, output_path, output_size, model='resnet50', dataset='swsl', thresh_scale=1):
+    preprocess_fn = create_pretrained(model, dataset, preprocess_only=True)
+    try:
+        os.mkdir(output_path[:-1])
+        os.mkdir(output_path + 'train')
+        os.mkdir(output_path + 'truth')
+        os.mkdir(output_path + 'classification_mask')
+    except:
+        pass
+
+    preprocess_and_create_data(data_path, output_path, output_size, preprocess_fn, thresh_scale)
+
+
+def connected_components(image, min_size: int):
+    '''
+    needs image to be of size [channel, h, w]
+    :param image:
+    :return:
+    '''
+    if image.size()[0] == 1:
+        image = image[0]
+    image = image.detach()
+    image = image.cpu()
+    image = image.numpy()
+    result = []
+    object_features = dict()
+    for c in range(len(image)):
+        channel = image[c]
+        blurred_img = skimage.filters.gaussian(channel, sigma=0.25)
+        thresh = threshold_otsu(blurred_img)
+        binary_mask = blurred_img > thresh
+        object_mask = morphology.remove_small_objects(binary_mask, min_size)
+        labeled_image, count = skimage.measure.label(object_mask, connectivity=2, return_num=True)
+        obj_feat = skimage.measure.regionprops(labeled_image)
+        result.append(labeled_image)
+        obj_feats = [(objf["label"], objf["area"], objf["coords"]) for objf in obj_feat]
+        obj_feats = sorted(obj_feats, key = lambda x: x[1], reverse=True)
+        object_features[c] = obj_feats
+    resulting_image = np.stack([i for i in result], -1)
+    return resulting_image, object_features
+
+
+def random_pixel_data(data_path: str, output_path: str, output_size: tuple, min_size: int, preprocess):
+
+    resizer = transforms.Resize(size=output_size[1:])
+    for filename in tqdm(os.listdir(data_path)):
+        org_img = torch.load(data_path+filename)
+        img = resizer(org_img)
+        # make three channel grayscale image
+        img = torch.stack([normalize_array_t(i) for i in img])
+        _, obj_f = connected_components(img, min_size)
+        buffer = torch.stack([i for i in img], -1)
+        mask = torch.zeros_like(buffer)
+        # do single pixel coloring based off largest component from each channel
+        for i in range(3):
+            coords = obj_f[i][0][2]
+            row, col = coords[np.random.choice(len(coords))]
+            mask[row][col][i] = 1
+
+        # to get a bool array
+        mask = mask > 0
+        tcg = three_channel_grayscale(buffer, mask)
+        # put images through preprocessing
+        tcg = tcg.numpy()
+        tcg = preprocess(tcg)
+        tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
+        torch.save(tcg, output_path + 'train_pixel/' + filename)
+    print('~Finished!~')
+
+
+def test_images(path, org_path, img_name='F030.pt'):
+    _, ax = plt.subplots(1,4)
+    mask = torch.load(path+'classification_mask/'+img_name)
+    mask = torch.stack([i for i in mask], -1).numpy()
+    ax[0].imshow(mask, vmin=0, vmax=1)
+    print('maskdone')
+    train = torch.load(path + 'train/' + img_name)
+    train = torch.stack([normalize_array_t(i) for i in train], -1).numpy()
+    ax[1].imshow(train)
+    print('traindone')
+    truth = torch.load(path + 'truth/' + img_name)
+    truth = torch.stack([i for i in truth], -1).numpy()
+    ax[2].imshow(truth)
+    print('truthdone')
+    org = torch.load(org_path + img_name)
+    org = torch.stack([normalize_array_t(i) for i in org], -1).numpy()
+    ax[3].imshow(org)
+    plt.savefig('testest.png')
 
 if __name__ == '__main__':
     # loop through ground truth samples, compute mean, make the grayscale3chan, normalize g.t and normalize grayscale3chan
+    data_path = '/nobackup/users/vinhle/data/slices/'
+    output_path = '/nobackup/users/vinhle/data/256bce/'
+    output_size = (3, 256, 256)
+    preprocess_main(data_path, output_path, output_size, thresh_scale = .5)
+    test_images(output_path, data_path)
 
-    # preprocess_fn = create_pretrained('resnet50', 'swsl', preprocess_only=True)
-    # data_path = '/nobackup/users/vinhle/data/slices/'
-    # output_path = '/nobackup/users/vinhle/data/2048/'
+
+    # mask = fixed_blobs(output_size[::-1], int(output_size[1] / 16), int(output_size[1] / 16),
+    #                    int(output_size[1] / 32), int(output_size[1] / 64), int(output_size[1] / 64), boolean=True)
+    # code to test connected components
+    # model = 'resnet50'
+    # dataset = 'swsl'
+    # preprocess_fn = create_pretrained(model, dataset, preprocess_only=True)
     # try:
-    #     os.mkdir(output_path[:-1])
-    #     os.mkdir(output_path+'train')
-    #     os.mkdir(output_path + 'truth')
-    #     os.mkdir(output_path + 'classification_mask')
+    #     os.mkdir(output_path + 'train_pixel')
     # except:
     #     pass
-    # output_size = (3,2048,2048)
-    # preprocess_and_create_data(data_path, output_path, output_size, preprocess_fn)
-    x = 9
-    print(bin(x))
+
+
 
 
 
