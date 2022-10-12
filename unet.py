@@ -142,31 +142,8 @@ if __name__ == '__main__':
     label2 = torch.randn(1,3,512,512)
     # unet = UNet(num_class = 3, retain_dim=True, out_sz=(256, 256))
 
-    # unet, pp = create_pretrained('resnet50', 'ssl')
-    unet, pp = create_pretrained('resnet50', 'swsl')
-    optimizer = torch.optim.Adam(unet.parameters(), lr=0.0001)
-    lossfn = nn.BCEWithLogitsLoss(reduction='mean')
-    out = unet(rand_inp)
-    loss = lossfn(out, label)
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-    out = unet(rand_inp_2)
-    loss = lossfn(out, label2)
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-    # optimizer = torch.optim.Adam(unet.parameters(), lr=0.0001)
-    # output = unet(rand_inp)
-    # print(unet)
-    # print(output.size())
-    # label = torch.randn(1, 3, 256, 256)
-    # loss = nn.MSELoss()(output, label)
-    # optimizer.zero_grad()
-    # loss.backward()
-    # optimizer.step()
-    # out = unet(rand_inp)
-    # print(out.size())
+    pass
+
 
 
 

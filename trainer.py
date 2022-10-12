@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs: int, batch_size: int, model_path: str,
-          loss_fn: object, early_stop_max: int = 25, continue_training: str = None, parallel: bool = True, data_type: str = 'unet'):
+          loss_fn: object, early_stop_max: int = 25, continue_training: str = None, parallel: bool = True):
     """
 
     :param model: model object
@@ -51,7 +51,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
         optimizer.load_state_dict(model_data['optimizer_state_dict'])
 
     # set up dataloader
-    z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0.2, data_type=data_type)
+    z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0.2)
     train_loader = z.train_dataloader()
     val_loader = z.validation_dataloader()
 

@@ -362,6 +362,15 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, name, img_si
     plt.savefig(f'{name}.png')
     print('Done~~~~~~~~~~~~~~~~~~~~')
 
+'''
+model = MyLightningModule.load_from_checkpoint("/path/to/checkpoint.ckpt")
+
+# disable randomness, dropout, etc...
+model.eval()
+
+# predict with the model
+y_hat = model(x)
+'''
 
 
 if __name__ == '__main__':
