@@ -101,6 +101,7 @@ class ProCodesDataModule(pl.LightningDataModule):
             self.xtrain, self.xtest, self.ytrain, self.ytest = train_test_split(self.items[0], self.items[1], test_size=self.test_size)
             # want val size == test size
             self.xval, self.xtest, self.yval, self.ytest = train_test_split(self.xtest, self.ytest, test_size=0.5)
+            print("VAL SET EXAMPLES: ", self.xval)
             print("TEST SET EXAMPLES: ", self.xtest)
             if stage in (None, "test"):
                 self.test = ProCodes([self.xtest, self.ytest], data_type=self.data_type)

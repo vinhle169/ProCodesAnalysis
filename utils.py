@@ -300,7 +300,7 @@ def preprocess_and_create_data(data_path: str, output_path: str, output_size: tu
         tcg = three_channel_grayscale(buffer, mask)
         # put images through preprocessing
         tcg = tcg.numpy()
-        tcg = preprocess(tcg)
+        # tcg = preprocess(tcg)
         tcg = torch.Tensor(np.stack([tcg[:,:,i] for i in range(3)], 0))
         torch.save(img, output_path + 'truth/' + filename)
         torch.save(tcg, output_path + 'train/' + filename)
@@ -399,11 +399,11 @@ def test_images(path, org_path, img_name='F030.pt'):
 
 if __name__ == '__main__':
     # loop through ground truth samples, compute mean, make the grayscale3chan, normalize g.t and normalize grayscale3chan
-    data_path = '/nobackup/users/vinhle/data/slices/'
-    output_path = '/nobackup/users/vinhle/data/256bce/'
+    data_path = '/nobackup/users/vinhle/data/z_max_slices/'
+    output_path = '/nobackup/users/vinhle/data/256/'
     output_size = (3, 256, 256)
     preprocess_main(data_path, output_path, output_size, thresh_scale = .5)
-    test_images(output_path, data_path)
+    test_images(output_path, data_path, 'F030.pt')
 
 
     # mask = fixed_blobs(output_size[::-1], int(output_size[1] / 16), int(output_size[1] / 16),

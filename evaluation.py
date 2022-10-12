@@ -245,7 +245,7 @@ def generate_model_outputs(model_directory, model_list, input_img_list, img_size
         model_path = model_directory + model_name
         checkpoint = torch.load(model_path)
         # unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=.10)
-        unet, _ = create_pretrained('resnet50', 'swsl')
+        unet, _ = create_pretrained('resnet34', None)
         if parallel:
             unet = nn.DataParallel(unet)
         unet.load_state_dict(checkpoint['model_state_dict'])
@@ -363,18 +363,18 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, name, img_si
     print('Done~~~~~~~~~~~~~~~~~~~~')
 
 
+
 if __name__ == '__main__':
 
     model_names = [
-                    '500_test.tar',
-                    '1000_test.tar',
-                    '1500_test.tar','2000_test.tar'
+
+                    '3000_test.tar'
                    ]
 
     model_directory = 'models/unet/'
     # checkpoint = torch.load(model_directory+model_names[0])
     # input_image_list = checkpoint['test_images']
-    input_image_list = ['/nobackup/users/vinhle/data/256_zmax/train/F030.pt']
+    input_image_list = ['/nobackup/users/vinhle/data/256/train/F030.pt']
     actual_images = [i.replace('train','truth') for i in input_image_list]
     # input_image_list = ['/nobackup/users/vinhle/data/512bce/truth/F041_trim_manual_1.pt',
     #     '/home/vinhle/procodes/code/outputs/best_BCE_normalized_512_single_0.pt',]

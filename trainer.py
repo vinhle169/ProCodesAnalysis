@@ -10,7 +10,6 @@ from torch.nn import MSELoss
 from torch.utils.tensorboard import SummaryWriter
 
 
-# noinspection PyUnboundLocalVariable,PyCallingNonCallable
 def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs: int, batch_size: int, model_path: str,
           loss_fn: object, early_stop_max: int = 25, continue_training: str = None, parallel: bool = True, data_type: str = 'unet'):
     """
@@ -42,17 +41,17 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
     if torch.cuda.is_available():
         cuda0 = torch.device('cuda:0')
         model.to(cuda0)
+    else:
+        cuda0 = 'cpu'
     # setup hyper parameters
-    criterion = loss_fn
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # repetitive if statement because of bug with cuda and model creation and optimizer creation
     if continue_training:
         optimizer.load_state_dict(model_data['optimizer_state_dict'])
-    # if continuing from a previous process:
 
     # set up dataloader
-    z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0.3, data_type=data_type)
+    z = ProCodesDataModule(data_dir=train_path, batch_size=batch_size, test_size=0.2, data_type=data_type)
     train_loader = z.train_dataloader()
     val_loader = z.validation_dataloader()
 
@@ -73,7 +72,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
             # zero_mask = zero_mask.to(cuda0)
             # forward pass
             output = model(image)
-            loss = criterion(output, label)
+            loss = loss_fn(output, label)
             running_loss += loss.item()
             # running_classification_acc += classification_accuracy(output, label, zero_mask)
             del image
@@ -109,7 +108,7 @@ def train(model: ColorizationNet, train_path: str, learning_rate: float, epochs:
         # writer.add_scalar("Accuracy/train", classification_acc_per_epoch, e)
         # writer.add_scalar("Loss/val", val_loss_per_epoch, e)
         # writer.add_scalar("Accuracy/val", classification_val_acc_per_epoch, e)
-        if (e + 1) % 100 == 0:
+        if (e + 1) % 200 == 0:
             torch.save({
                 'epoch': e,
                 'model_state_dict': model.state_dict(),
@@ -173,7 +172,7 @@ if __name__ == '__main__':
     if label_path:
         path = [path, label_path]
     # unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=0.05)
-    unet, _ = create_pretrained('resnet50', 'swsl')
+    unet, _ = create_pretrained('resnet34', None)
     print("BEGIN TRAINING")
     loss_data = train(unet, path, 0.0005, epochs, batch_size, 'models/unet/', early_stop_max=1000, loss_fn=MSE,
                       continue_training=model_presave, parallel=True)

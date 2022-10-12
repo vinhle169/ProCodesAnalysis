@@ -120,9 +120,11 @@ class UNet(Module):
         return out
 
 def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=3, preprocess_only=False):
-    preprocess_fn = get_preprocessing_fn(encoder_name, pretrained=encoder_weights)
-    if preprocess_only:
-        return preprocess_fn
+    preprocess_fn = None
+    if encoder_weights:
+        preprocess_fn = get_preprocessing_fn(encoder_name, pretrained=encoder_weights)
+        if preprocess_only:
+            return preprocess_fn
     model = smp.Unet(
         encoder_name=encoder_name,  # resnet34 resnet50
         encoder_weights=encoder_weights,  # use 'imagenet' 'swsl'
