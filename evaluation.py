@@ -7,7 +7,8 @@ from utils import *
 import itertools
 from collections import Counter
 from skimage.metrics import structural_similarity as ssim
-
+from unet_lightning import UnetLightning
+from pytorch_lightning import Trainer, seed_everything
 
 def elementwise_accuracy(img_1, img_2, ignore_zeros=False, deviation=0.001):
     '''
@@ -362,35 +363,51 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, name, img_si
     plt.savefig(f'{name}.png')
     print('Done~~~~~~~~~~~~~~~~~~~~')
 
-'''
-model = MyLightningModule.load_from_checkpoint("/path/to/checkpoint.ckpt")
 
-# disable randomness, dropout, etc...
-model.eval()
+def remove_outliers(img):
+    top = np.quantile(img, .99)
+    img = np.where(img<top, img, 0)
+    return img
 
-# predict with the model
-y_hat = model(x)
-'''
+
+def make_plotable(img, remove=False):
+    img = img.detach().cpu().numpy()
+    if remove:
+        img = remove_outliers(img)
+    img = np.stack([normalize_array(i) for i in img], -1)
+    return img
 
 
 if __name__ == '__main__':
+    filenames = ['F030.pt', 'F039.pt', 'F050.pt']
+    u, _ = create_pretrained('resnet34', None)
+    model = UnetLightning(u)
+    checkpoint = torch.load("models/unet/UNET-epoch=1999.ckpt")
+    model.load_state_dict(checkpoint["state_dict"])
+    model.eval()
+    results = []
+    loss_fn = nn.MSELoss(reduction='mean')
+    for file in tqdm(filenames):
+        x = torch.load(f'/nobackup/users/vinhle/data/256/train/{file}')
+        y = torch.load(f'/nobackup/users/vinhle/data/256/truth/{file}')
+        y = y.view([1, 3, 256, 256])
+        x = x.view([1, 3, 256, 256])
+        y_hat = model.predict(x)
+        loss = loss_fn(y_hat, y)
+        x = make_plotable(x[0])
+        y_hat = make_plotable(y_hat[0])
+        y = make_plotable(y[0])
+        results.append([y,y_hat,loss])
 
-    model_names = [
+    results.sort(key = lambda x: x[2])
+    fig, ax = plt.subplots(3, 2)
+    for i in tqdm(range(3)):
+        for j in range(2):
+            if j == 1:
+                ax[i][j].title.set_text(f'Loss {round(results[i][2].item(), 4)}')
+            ax[i][j].imshow(results[i][j])
+            ax[i][j].axis('off')
 
-                    '3000_test.tar'
-                   ]
+    plt.savefig('sortedbyloss.png')
 
-    model_directory = 'models/unet/'
-    # checkpoint = torch.load(model_directory+model_names[0])
-    # input_image_list = checkpoint['test_images']
-    input_image_list = ['/nobackup/users/vinhle/data/256/train/F030.pt']
-    actual_images = [i.replace('train','truth') for i in input_image_list]
-    # input_image_list = ['/nobackup/users/vinhle/data/512bce/truth/F041_trim_manual_1.pt',
-    #     '/home/vinhle/procodes/code/outputs/best_BCE_normalized_512_single_0.pt',]
-    generate_model_outputs(model_directory, model_names, actual_images, img_size=(1,3,256,256), output_path='outputs/', parallel=True)
-    print('---------------generating done---------------------')
-    output_images = ['outputs/'+i for i in os.listdir('outputs/')]
-    plot_different_outputs(output_images, input_image_list, actual_images, 'test', img_size=[256, 256, 3])
-
-    print('--------------- done---------------------')
 
