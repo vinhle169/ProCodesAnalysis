@@ -1,3 +1,4 @@
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,6 +8,7 @@ from pytorch_lightning import Trainer, seed_everything
 from dataset import ProCodesDataModule
 import argparse
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import TensorBoardLogger
 
 
 class UnetLightning(pl.LightningModule):
@@ -15,50 +17,67 @@ class UnetLightning(pl.LightningModule):
         self.model = unet
         self.loss_fn = nn.MSELoss(reduction='mean')
         self.learning_rate = learning_rate
+        self.running_loss = 0
+        self.running_val_loss = 0
+        self.num_batches = 0
+        self.num_batches_val = 0
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self.model(x)
         loss = self.loss_fn(y_hat, y)
+        self.log_dict({"Loss": loss, "step": self.current_epoch + 1})
         return loss
+
+    # def on_epoch_end(self):
+    #     loss = self.running_loss / max(self.num_batches,1)
+    #     self.log_dict({"Loss": loss, "step": self.current_epoch + 1})
+    #     self.running_loss, self.num_batches = 0, 0
+    #
+    #     if self.running_val_loss > 0:
+    #         val_loss = self.running_val_loss / max(self.num_batches_val, 1)
+    #         self.log_dict({"Validation Loss": val_loss, "step": self.current_epoch + 1})
+    #         self.running_val_loss, self.num_batches_val = 0, 0
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
-        return [optimizer], [lr_scheduler]
+        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
+        lr_scheduler = None
+        return [optimizer]
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self.model(x)
         val_loss = self.loss_fn(y_hat, y)
-        self.log("val_loss", val_loss)
+        self.log_dict({"Validation Loss": val_loss, "step": self.current_epoch + 1})
 
-    def predict_step(self, batch, batch_idx = 0, dataloader_idx = None):
-        x, y = batch
-        pred = self.encoder(x)
+
+    def predict(self, x):
+        pred = self.model(x)
         return pred
 
 
-# saves a file like: my/path/sample-mnist-epoch=02-val_loss=0.32.ckpt
-
-
 def main(path, model_path, epochs = 1, batch_size = 1, gpus = 0):
+    start = time.time()
     seed_everything(22, workers=True)
     unet, _ = create_pretrained('resnet34', None)
-    unet_pl = UnetLightning(unet)
+    unet_pl = UnetLightning(unet, learning_rate=0.0005)
     z = ProCodesDataModule(data_dir=path, batch_size=batch_size,
                            test_size=0.2)
     train_loader = z.train_dataloader()
     val_loader = z.validation_dataloader()
+    logger = TensorBoardLogger("runs/", name="unet_pl")
     checkpoint_callback = ModelCheckpoint(
         every_n_epochs=200,
         save_top_k=-1,
         save_on_train_epoch_end=True,
         dirpath=model_path,
-        filename="UNET-{epoch:02d}",
+        filename="UNET-{epoch:04d}",
     )
-    trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback])
+    trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback],
+                      check_val_every_n_epoch=5, logger=logger)
     trainer.fit(unet_pl, train_loader, val_loader)
+    print((time.time() - start)/60, 'minutes to run')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
