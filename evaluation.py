@@ -364,32 +364,19 @@ def plot_different_outputs(file_paths, org_img_paths, ground_truth, name, img_si
     print('Done~~~~~~~~~~~~~~~~~~~~')
 
 
-def remove_outliers(img):
-    top = np.quantile(img, .99)
-    img = np.where(img<top, img, 0)
-    return img
-
-
-def make_plotable(img, remove=False):
-    img = img.detach().cpu().numpy()
-    if remove:
-        img = remove_outliers(img)
-    img = np.stack([normalize_array(i) for i in img], -1)
-    return img
-
 
 if __name__ == '__main__':
-    filenames = ['F030.pt', 'F039.pt', 'F050.pt']
+    filenames = ['201F041.pt', '012F051.pt', '210F051.pt']
     u, _ = create_pretrained('resnet34', None)
     model = UnetLightning(u)
-    checkpoint = torch.load("models/unet/UNET-epoch=1999.ckpt")
+    checkpoint = torch.load("models/unet/UNET-chan-permute-epoch=6499.ckpt")
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
     results = []
     loss_fn = nn.MSELoss(reduction='mean')
     for file in tqdm(filenames):
-        x = torch.load(f'/nobackup/users/vinhle/data/256/train/{file}')
-        y = torch.load(f'/nobackup/users/vinhle/data/256/truth/{file}')
+        x = torch.load(f'/nobackup/users/vinhle/data/256_channel_permutation/train/{file}')
+        y = torch.load(f'/nobackup/users/vinhle/data/256_channel_permutation/truth/{file}')
         y = y.view([1, 3, 256, 256])
         x = x.view([1, 3, 256, 256])
         y_hat = model.predict(x)
@@ -397,14 +384,14 @@ if __name__ == '__main__':
         x = make_plotable(x[0])
         y_hat = make_plotable(y_hat[0])
         y = make_plotable(y[0])
-        results.append([y,y_hat,loss])
+        results.append([y,y_hat,loss,file])
 
     results.sort(key = lambda x: x[2])
     fig, ax = plt.subplots(3, 2)
     for i in tqdm(range(3)):
         for j in range(2):
             if j == 1:
-                ax[i][j].title.set_text(f'Loss {round(results[i][2].item(), 4)}')
+                ax[i][j].title.set_text(f'{results[i][3]}, Loss {round(results[i][2].item(), 4)}')
             ax[i][j].imshow(results[i][j])
             ax[i][j].axis('off')
 

@@ -1,11 +1,13 @@
 import os
+import random
+import json
 import seaborn as sns
 import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from imageio import volread as imread
+from imageio import volread, imread
 from skimage.filters import threshold_otsu
 from unet import create_pretrained
 from torchvision import transforms
@@ -15,6 +17,7 @@ import skimage.color
 import skimage.filters
 import skimage.measure
 from skimage import morphology
+import itertools
 
 def otsu_threshold_channelwise(image, thresh_scale: float = 1.0):
     mask = []
@@ -46,7 +49,7 @@ def random_channel(image, multi_image=False):
 
 
 def load_tif(path):
-    img = imread(path)
+    img = volread(path)
     # equalizes/normalizes channels mark
     img = img.astype(np.float32) / img.max((-1, -2), keepdims=True)
     return img
@@ -378,34 +381,140 @@ def random_pixel_data(data_path: str, output_path: str, output_size: tuple, min_
     print('~Finished!~')
 
 
-def test_images(path, org_path, img_name='F030.pt'):
-    _, ax = plt.subplots(1,4)
-    mask = torch.load(path+'classification_mask/'+img_name)
-    mask = torch.stack([i for i in mask], -1).numpy()
-    ax[0].imshow(mask, vmin=0, vmax=1)
-    print('maskdone')
+def test_images(path, img_name='F030.pt', output_path='testest.png'):
+    _, ax = plt.subplots(1,2)
+
     train = torch.load(path + 'train/' + img_name)
     train = torch.stack([normalize_array_t(i) for i in train], -1).numpy()
-    ax[1].imshow(train)
-    print('traindone')
+    ax[0].imshow(train)
     truth = torch.load(path + 'truth/' + img_name)
     truth = torch.stack([i for i in truth], -1).numpy()
-    ax[2].imshow(truth)
-    print('truthdone')
-    org = torch.load(org_path + img_name)
-    org = torch.stack([normalize_array_t(i) for i in org], -1).numpy()
-    ax[3].imshow(org)
-    plt.savefig('testest.png')
+    ax[1].imshow(truth)
+
+    plt.savefig(output_path)
+
+
+def remove_outliers(img):
+    top = np.quantile(img, .99)
+    img = np.where(img<top, img, 0)
+    return img
+
+
+def make_plotable(img, remove=False):
+    img = img.detach().cpu().numpy()
+    if remove:
+        img = remove_outliers(img)
+    img = np.stack([normalize_array(i) for i in img], -1)
+    return img
+
+
+def save_image(image, output_path):
+    img = make_plotable(image)
+    plt.imshow(img)
+    plt.savefig(output_path)
+
+
+def channel_transform(data_path_train, data_path_truth, new_data_path, num_channels):
+    try:
+        print('Creating output paths')
+        os.mkdir(new_data_path[:-1])
+        os.mkdir(new_data_path + 'train')
+        os.mkdir(new_data_path + 'truth')
+    except:
+        print('Output paths already exist, permuting channels now')
+    permutations = list(itertools.permutations(range(num_channels), num_channels))
+    perm_name = [''.join([str(j) for j in i]) for i in permutations]
+    print('Begin permuting channels of train data')
+    for filename in tqdm(os.listdir(data_path_train)):
+        org_img = torch.load(data_path_train+filename)
+        clone = torch.clone(org_img)
+        for i in range(len(permutations)):
+            torch.save(clone[permutations[i],:,:], new_data_path + 'train/' + perm_name[i] + filename)
+    print('Begin permuting channels of truth data')
+    for filename in tqdm(os.listdir(data_path_truth)):
+        org_img = torch.load(data_path_truth + filename)
+        clone = torch.clone(org_img)
+        for i in range(len(permutations)):
+            torch.save(clone[permutations[i], :, :], new_data_path + 'truth/' + perm_name[i] + filename)
+
+
+def kaggle_als_renamer(path, output_path, output_path_j, create=False):
+    name_to_id = dict()
+    id_to_numbers = dict()
+    i = 0
+    for org_name in tqdm(os.listdir(path)):
+        idx = org_name.rfind('_')
+        buffer = org_name[:idx]
+        idx2 = buffer.rfind('_')
+        name = buffer[:idx2]
+        number = buffer[idx2+1:]
+        if name_to_id.get(name, -1) < 0:
+            name_to_id[name] = i
+            i += 1
+        id_to_numbers.setdefault(name_to_id[name], [])
+        id_to_numbers[name_to_id[name]].append(number)
+        img = imread(path+org_name)
+        img_t = torch.Tensor(img)
+        torch.save(img_t, output_path+str(name_to_id[name])+'_'+number+'.pt')
+    json_dict = {'name_to_id':name_to_id,
+                 'id_to_numbers':id_to_numbers}
+    with open(output_path_j, "w") as outfile:
+        json.dump(json_dict, outfile)
+    return json_dict
+
+
+# def create_synthetic_dataset_als(meta_data, path, output_path, max_images=20000, cells_per_chan=4, image_shape=(3, 1024, 1024)):
+
+def create_synthetic_dataset_als(path, max_images=20000, cells_per_chan=4, image_shape=(1024, 1024, 3)):
+    def generate_x_y(points):
+        x,y = random.randint(0,900), random.randint(0,900)
+        if not points:
+            return x,y
+        diff = lambda p1, p2: (p1-p2 < -192) or (p1-p2 > 192)
+        xlist = [x]*len(points)
+        ylist = [y]*len(points)
+        if not all(map(diff, points, xlist)) or not all(map(diff, points, ylist)):
+            return generate_x_y(points)
+        return x,y
+    filenames = list(os.listdir(path))
+    curr_chan = 0
+    num_cells = 0
+    num_images = 0
+    while num_images < max_images:
+        new = np.zeros(image_shape)
+        for channel in range(image_shape[-1]):
+            empty = np.zeros(image_shape[:2])
+            points = []
+            for i in range(cells_per_chan):
+                x,y = generate_x_y(points)
+                name = random.sample(filenames, 1)[0]
+                img = imread(path+name)
+
+                empty[x:min(x+256,1023), y:min(y+256,1023)] = normalize_array(img[:min(1023-x, 256),:min(1023-y, 256)])
+                chan = np.maximum(new[:,:,channel],empty)
+                new[:,:,channel] = chan
+        break
+    plt.imshow(new)
+    plt.show()
+
+
+
 
 if __name__ == '__main__':
     # loop through ground truth samples, compute mean, make the grayscale3chan, normalize g.t and normalize grayscale3chan
-    data_path = '/nobackup/users/vinhle/data/z_max_slices/'
-    output_path = '/nobackup/users/vinhle/data/256/'
-    output_size = (3, 256, 256)
-    preprocess_main(data_path, output_path, output_size, thresh_scale = .5)
-    test_images(output_path, data_path, 'F030.pt')
-
-
+    # data_path = '/nobackup/users/vinhle/data/z_max_slices/'
+    train = '/nobackup/users/vinhle/data/256/train/'
+    truth = '/nobackup/users/vinhle/data/256/truth/'
+    output = '/nobackup/users/vinhle/data/256_channel_permutation/'
+    # output_size = (3, 256, 256)
+    # preprocess_main(data_path, output_path, output_size, thresh_scale = .5)
+    # test_images(output_path, data_path, 'F030.pt')
+    # channel_transform(train, truth, output, 3)
+    # test_images(output,'012F030.pt')
+    # test_images(output, '102F030.pt')
+    path = '/nobackup/users/vinhle/data/hpa_data/renamed/'
+    path = 'data/single_cell/train_tiles/nuclear_bodies/'
+    create_synthetic_dataset_als('data/single_cell/train_tiles/nuclear_bodies/')
     # mask = fixed_blobs(output_size[::-1], int(output_size[1] / 16), int(output_size[1] / 16),
     #                    int(output_size[1] / 32), int(output_size[1] / 64), int(output_size[1] / 64), boolean=True)
     # code to test connected components

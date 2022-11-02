@@ -130,7 +130,8 @@ def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_ch
         encoder_weights=encoder_weights,  # use 'imagenet' 'swsl'
         in_channels=in_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
         classes=classes,  # model output channels (number of classes in your dataset)
-        activation=None  # type of activation function for the final layer
+        activation=None,  # type of activation function for the final layer
+        decoder_use_batchnorm=True
     )
     return model, preprocess_fn
 

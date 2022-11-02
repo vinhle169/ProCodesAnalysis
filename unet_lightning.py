@@ -12,7 +12,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 
 class UnetLightning(pl.LightningModule):
-    def __init__(self, unet, learning_rate=0.0005):
+    def __init__(self, unet, learning_rate=0.0001):
         super().__init__()
         self.model = unet
         self.loss_fn = nn.MSELoss(reduction='mean')
@@ -61,21 +61,21 @@ def main(path, model_path, epochs = 1, batch_size = 1, gpus = 0):
     start = time.time()
     seed_everything(22, workers=True)
     unet, _ = create_pretrained('resnet34', None)
-    unet_pl = UnetLightning(unet, learning_rate=0.0005)
+    unet_pl = UnetLightning(unet, learning_rate=0.0001)
     z = ProCodesDataModule(data_dir=path, batch_size=batch_size,
                            test_size=0.2)
     train_loader = z.train_dataloader()
     val_loader = z.validation_dataloader()
     logger = TensorBoardLogger("runs/", name="unet_pl")
     checkpoint_callback = ModelCheckpoint(
-        every_n_epochs=200,
+        every_n_epochs=500,
         save_top_k=-1,
         save_on_train_epoch_end=True,
         dirpath=model_path,
-        filename="UNET-{epoch:04d}",
+        filename="UNET-chan-permute-{epoch:04d}",
     )
     trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback],
-                      check_val_every_n_epoch=5, logger=logger)
+                      check_val_every_n_epoch=5, logger=logger, strategy="ddp_find_unused_parameters_false")
     trainer.fit(unet_pl, train_loader, val_loader)
     print((time.time() - start)/60, 'minutes to run')
 
