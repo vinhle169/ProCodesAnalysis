@@ -438,9 +438,10 @@ def channel_transform(data_path_train, data_path_truth, new_data_path, num_chann
             torch.save(clone[permutations[i], :, :], new_data_path + 'truth/' + perm_name[i] + filename)
 
 
-def kaggle_als_renamer(path, output_path, output_path_j, create=False):
+def kaggle_als_renamer(path, output_path, output_path_j):
     name_to_id = dict()
     id_to_numbers = dict()
+    id_to_name = dict()
     i = 0
     for org_name in tqdm(os.listdir(path)):
         idx = org_name.rfind('_')
@@ -450,6 +451,7 @@ def kaggle_als_renamer(path, output_path, output_path_j, create=False):
         number = buffer[idx2+1:]
         if name_to_id.get(name, -1) < 0:
             name_to_id[name] = i
+            id_to_name[i] = name
             i += 1
         id_to_numbers.setdefault(name_to_id[name], [])
         id_to_numbers[name_to_id[name]].append(number)
@@ -457,6 +459,7 @@ def kaggle_als_renamer(path, output_path, output_path_j, create=False):
         img_t = torch.Tensor(img)
         torch.save(img_t, output_path+str(name_to_id[name])+'_'+number+'.pt')
     json_dict = {'name_to_id':name_to_id,
+                 'id_to_name':id_to_name,
                  'id_to_numbers':id_to_numbers}
     with open(output_path_j, "w") as outfile:
         json.dump(json_dict, outfile)
@@ -465,7 +468,7 @@ def kaggle_als_renamer(path, output_path, output_path_j, create=False):
 
 # def create_synthetic_dataset_als(meta_data, path, output_path, max_images=20000, cells_per_chan=4, image_shape=(3, 1024, 1024)):
 
-def create_synthetic_dataset_als(path, max_images=20000, cells_per_chan=4, image_shape=(1024, 1024, 3)):
+def create_synthetic_dataset_als(path, max_images=20000, cells_per_chan=6, image_shape=(1024, 1024, 3)):
     def generate_x_y(points):
         x,y = random.randint(0,900), random.randint(0,900)
         if not points:
@@ -476,6 +479,7 @@ def create_synthetic_dataset_als(path, max_images=20000, cells_per_chan=4, image
         if not all(map(diff, points, xlist)) or not all(map(diff, points, ylist)):
             return generate_x_y(points)
         return x,y
+    key_list = 1
     filenames = list(os.listdir(path))
     curr_chan = 0
     num_cells = 0
@@ -514,7 +518,11 @@ if __name__ == '__main__':
     # test_images(output, '102F030.pt')
     path = '/nobackup/users/vinhle/data/hpa_data/renamed/'
     path = 'data/single_cell/train_tiles/nuclear_bodies/'
-    create_synthetic_dataset_als('data/single_cell/train_tiles/nuclear_bodies/')
+    # kaggle_als_renamer(path, 'data/single_cell/train_tiles/new_nuclear/', 'data/single_cell/train_tiles/metadata.json')
+    kaggle_als_renamer('/nobackup/users/vinhle/data/hpa_data/nuclear_bodies/',
+                       '/nobackup/users/vinhle/data/hpa_data/nuclear_bodies_renamed/', '/nobackup/users/vinhle/data/hpa_data/metadata.json')
+
+    # create_synthetic_dataset_als('data/single_cell/train_tiles/nuclear_bodies/')
     # mask = fixed_blobs(output_size[::-1], int(output_size[1] / 16), int(output_size[1] / 16),
     #                    int(output_size[1] / 32), int(output_size[1] / 64), int(output_size[1] / 64), boolean=True)
     # code to test connected components
