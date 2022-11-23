@@ -18,6 +18,7 @@ import skimage.filters
 import skimage.measure
 from skimage import morphology
 import itertools
+import time
 
 def otsu_threshold_channelwise(image, thresh_scale: float = 1.0):
     mask = []
@@ -466,39 +467,105 @@ def kaggle_als_renamer(path, output_path, output_path_j):
     return json_dict
 
 
-# def create_synthetic_dataset_als(meta_data, path, output_path, max_images=20000, cells_per_chan=4, image_shape=(3, 1024, 1024)):
+def remove_points(points, sample_space):
+    '''
+    adjusts the sample space such that it only contains points where if a cell were to be placed
+    it won't take up more than about 1/4 of any current cells area (what checker function does)
+    '''
+    def checker(point, points):
+        x,y = point
+        for x_i,y_i in points:
+            if ((x_i - 192) < x < (x_i + 192)) and ((y_i - 192) < y < (y_i + 192)):
+                return False
+        return True
+    # this line is currently where a lot of the time is being spent
+    # if sample space is [N, 2], i am not sure what else to do, i thought about np.where but idk how that would work
+    new_sample_space = np.array([[point[0], point[1]] for point in sample_space if checker(point,points)])
+    return new_sample_space
 
-def create_synthetic_dataset_als(path, max_images=20000, cells_per_chan=6, image_shape=(1024, 1024, 3)):
-    def generate_x_y(points):
-        x,y = random.randint(0,900), random.randint(0,900)
-        if not points:
-            return x,y
-        diff = lambda p1, p2: (p1-p2 < -192) or (p1-p2 > 192)
-        xlist = [x]*len(points)
-        ylist = [y]*len(points)
-        if not all(map(diff, points, xlist)) or not all(map(diff, points, ylist)):
-            return generate_x_y(points)
-        return x,y
-    key_list = 1
-    filenames = list(os.listdir(path))
-    curr_chan = 0
-    num_cells = 0
+# def generate_x_y(points, sample_space):
+#     # generate points for top left of image to be inserted
+#     # makes sure there's no overlap of more than 1/4th of an image
+#     if not points:
+#         x, y = sample_space[np.random.choice(sample_space.shape[0], 1)][0]
+#         return x, y, sample_space
+#     sample_space = remove_points(sample_space, points)
+#     x,y  = sample_space[np.random.choice(sample_space.shape[0], 1)][0]
+#     return x, y, sample_space
+
+
+def generate_x_y(mask):
+    # mask should be 900x900
+    poss_x, poss_y = torch.nonzero(mask, as_tuple=True)
+    idx = np.random.choice(poss_x.shape[0],1)
+    x, y = poss_x[idx], poss_y[idx]
+    mask[max(0,x-192):min(1023,x+192), max(0,y-192):min(1023,y+192)] = 0
+    return x, y, mask
+
+
+def create_synthetic_dataset_als(path_bodies, path_outlines, metadata, max_images=20000, cells_per_chan=4, image_shape=(3, 1024, 1024)):
+
+    start_time = time.time()
+    id_to_numbers = metadata['id_to_numbers']
+    keys, lengths = [], []
+    for key, val in id_to_numbers.items():
+        keys.append(key)
+        lengths.append(len(val))
+    lengths = np.array(lengths) / sum(lengths)
     num_images = 0
     while num_images < max_images:
-        new = np.zeros(image_shape)
-        for channel in range(image_shape[-1]):
-            empty = np.zeros(image_shape[:2])
+        temp_bodies = torch.zeros(image_shape)
+        points_image = []
+        keys_image = []
+        # insert cell outlines [x[0,:], x[:,0], x[-1,:], x[:,-1]]
+        for channel in range(image_shape[0]):
+            keys_i = np.random.choice(keys, size=cells_per_chan, replace=False, p=lengths)
+            keys_paths = [f'{key}_{np.random.choice(id_to_numbers[key])}.pt' for key in keys_i]
+            chan = torch.zeros(image_shape[1:])
             points = []
-            for i in range(cells_per_chan):
-                x,y = generate_x_y(points)
-                name = random.sample(filenames, 1)[0]
-                img = imread(path+name)
+            chan_mask = torch.ones((image_shape[1]-256, image_shape[1]-256))
+            print(chan_mask.shape)
 
-                empty[x:min(x+256,1023), y:min(y+256,1023)] = normalize_array(img[:min(1023-x, 256),:min(1023-y, 256)])
-                chan = np.maximum(new[:,:,channel],empty)
-                new[:,:,channel] = chan
+            for i in range(cells_per_chan):
+                empty = torch.zeros(image_shape[1:])
+                # x, y, sample_space = generate_x_y(points,sample_space)
+                x, y, chan_mask = generate_x_y(chan_mask)
+                img = torch.load(path_bodies+keys_paths[i])
+                points.append([x,y])
+                empty[x:min(x+256,1023), y:min(y+256,1023)] = normalize_array_t(
+                    img[:min(1023-x, 256),:min(1023-y, 256)])
+                chan = torch.maximum(chan,empty)
+            temp_bodies[channel,:,:] = chan
+            points_image.append(points)
+            keys_image.append(keys_paths)
+
+        # insert cell bodies
+        temp_outlines = torch.zeros(image_shape)
+        for channel in range(image_shape[0]):
+            locations = points_image[channel]
+            keys_i = keys_image[channel]
+            chan = torch.zeros(image_shape[1:])
+            for i in range(cells_per_chan):
+                empty = torch.zeros(image_shape[1:])
+                x,y = locations[i]
+                img = torch.load(path_outlines + keys_i[i])
+                empty[x:min(x + 256, 1023), y:min(y + 256, 1023)] = normalize_array_t(
+                    img[:min(1023 - x, 256), :min(1023 - y, 256)])
+                chan = torch.maximum(chan, empty)
+            temp_outlines[channel,:,:] = chan
+        grayscale = torch.mean(temp_outlines, dim=0)
+        training = torch.zeros_like(temp_outlines)
+        training[0,:, :, ] = training[1,:, :, ] = training[2,:, :] = grayscale
+        training = torch.maximum(training, temp_bodies)
+        ground_truth = torch.maximum(temp_outlines, temp_bodies)
+        # num_images += 1
         break
-    plt.imshow(new)
+    print(time.time() - start_time)
+    ground_truth = make_plotable(ground_truth)
+    training = make_plotable(training)
+    fig, ax = plt.subplots(1,2)
+    ax[0].imshow(ground_truth)
+    ax[1].imshow(training)
     plt.show()
 
 
@@ -507,32 +574,86 @@ def create_synthetic_dataset_als(path, max_images=20000, cells_per_chan=6, image
 if __name__ == '__main__':
     # loop through ground truth samples, compute mean, make the grayscale3chan, normalize g.t and normalize grayscale3chan
     # data_path = '/nobackup/users/vinhle/data/z_max_slices/'
-    train = '/nobackup/users/vinhle/data/256/train/'
-    truth = '/nobackup/users/vinhle/data/256/truth/'
-    output = '/nobackup/users/vinhle/data/256_channel_permutation/'
+
     # output_size = (3, 256, 256)
     # preprocess_main(data_path, output_path, output_size, thresh_scale = .5)
     # test_images(output_path, data_path, 'F030.pt')
     # channel_transform(train, truth, output, 3)
     # test_images(output,'012F030.pt')
     # test_images(output, '102F030.pt')
-    path = '/nobackup/users/vinhle/data/hpa_data/renamed/'
-    path = 'data/single_cell/train_tiles/nuclear_bodies/'
-    # kaggle_als_renamer(path, 'data/single_cell/train_tiles/new_nuclear/', 'data/single_cell/train_tiles/metadata.json')
-    kaggle_als_renamer('/nobackup/users/vinhle/data/hpa_data/nuclear_bodies/',
-                       '/nobackup/users/vinhle/data/hpa_data/nuclear_bodies_renamed/', '/nobackup/users/vinhle/data/hpa_data/metadata.json')
+    # meta = "data/single_cell/train_tiles/metadata.json"
+    # path1 = "data/single_cell/train_tiles/nuclear_bodies/"
+    # path2 = "data/single_cell/train_tiles/nuclear_outlines/"
+    # with open(meta) as m:
+    #     metadata = json.load(m)
+    # create_synthetic_dataset_als(path1, path2, metadata)
+    np.random.seed(0)
+    segmentation_mask_cell_path = 'data/cell_mask_test.npz'
+    segmentation_mask_nuclei_path = 'data/nuclei_mask_test.npz'
+    segmentation_mask_nuclei = np.load(segmentation_mask_nuclei_path)
+    smn = segmentation_mask_nuclei[segmentation_mask_nuclei.files[0]]
+    segmentation_mask_cell = np.load(segmentation_mask_cell_path)
+    smc = segmentation_mask_cell[segmentation_mask_cell.files[0]]
+    output_img = np.zeros((2048,2048,3))
+    img = imread('data/test.png', as_gray=True)
+    img = normalize_array(img)
+    region_dict = {}
+    for region in skimage.measure.regionprops(smc):
+        output_chan = np.zeros((2048, 2048))
+        color = np.random.choice([0, 1, 2])
+        region_dict[region.label] = color
+        output_chan[tuple(region.coords.T)] = img[tuple(region.coords.T)]
+        output_chan = normalize_array(output_chan)
+        output_img[:, :, color] += output_chan
+    last =  region
+    grayscale = output_img.mean(2)
+    original_img = np.copy(output_img)
+    output_img[:,:,0] = output_img[:,:,1] = output_img[:,:,2] = grayscale
 
-    # create_synthetic_dataset_als('data/single_cell/train_tiles/nuclear_bodies/')
-    # mask = fixed_blobs(output_size[::-1], int(output_size[1] / 16), int(output_size[1] / 16),
-    #                    int(output_size[1] / 32), int(output_size[1] / 64), int(output_size[1] / 64), boolean=True)
-    # code to test connected components
-    # model = 'resnet50'
-    # dataset = 'swsl'
-    # preprocess_fn = create_pretrained(model, dataset, preprocess_only=True)
-    # try:
-    #     os.mkdir(output_path + 'train_pixel')
-    # except:
-    #     pass
+    for region in skimage.measure.regionprops(smn):
+        output_chan = np.zeros((2048, 2048))
+        color = region_dict[region.label]
+        output_chan[tuple(region.coords.T)] = .33
+        output_img[:, :, color] += output_chan
+        original_img[:, :, color] += output_chan
+
+    x = [reg for reg in skimage.measure.regionprops(smc)]
+    last = x[5]
+    altered_img = np.copy(original_img)
+    training_img = output_img
+    gauss = np.random.normal(.3,.2,altered_img.size)
+    gauss = gauss.reshape(altered_img.shape[0], altered_img.shape[1], altered_img.shape[2])
+    altered_img += gauss
+    acopy = np.copy(altered_img)
+    color = region_dict[last.label]
+    acopy[tuple(last.coords.T)] = 1
+    to_use = altered_img[:,:,color]
+    to_use_org = original_img[:,:,color]
+    mse = ((to_use_org[tuple(last.coords.T)] - to_use[tuple(last.coords.T)])**2).mean()
+    print(mse)
+    # fig,ax = plt.subplots(1,2)
+    # ax[0].imshow(smn)
+    # ax[1].imshow(smc)
+    # plt.show()
+    # sample_space = np.array([[x,y] for x in range(900) for y in range(900)])
+    # points = [[0,0], [256,256], [256, 512]]
+    # x=  remove_points(sample_space, points)
+    # print(x.shape)
+    fig,ax = plt.subplots(2,2)
+    ax[0][0].imshow(training_img)
+    ax[0][0].set_title('Training Img')
+    ax[0][1].imshow(original_img)
+    ax[0][1].set_title('Original')
+    ax[1][0].imshow(altered_img)
+    ax[1][0].set_title('Altered')
+    ax[1][1].imshow(acopy)
+    ax[1][1].set_title('Highlighted')
+
+    plt.show()
+
+
+
+
 
 
 
