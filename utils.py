@@ -1,5 +1,4 @@
 import os
-import random
 import json
 import seaborn as sns
 import torch
@@ -7,11 +6,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from imageio import volread, imread
+from imageio.v2 import volread, imread
 from skimage.filters import threshold_otsu
 from unet import create_pretrained
 from torchvision import transforms
 import skimage
+from skimage import transform
 import skimage.io
 import skimage.color
 import skimage.filters
@@ -569,88 +569,90 @@ def create_synthetic_dataset_als(path_bodies, path_outlines, metadata, max_image
     plt.show()
 
 
+def np_to_torch_img(img):
+    new_img = np.stack([img[:,:,i] for i in range(img.shape[2])])
+    img_t = torch.from_numpy(new_img)
+    return img_t
+
+
+def hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path, img_size=(2048, 2048, 3)):
+    '''
+    Given 3 paths, cell path and nuclei path leading to segmentation masks for original images
+    This function will use these three types of images to make training data, on given pathes
+    Train -> cell nuclei will be colored in, everything else grayscale
+    Truth -> cell nuclei not colored, everything else colored
+    :param cell_path: 
+    :param nuclei_path: 
+    :param org_path:
+    :param new_train:
+    :param new_truth:
+    :param img_size: 
+    :return: none
+    '''
+    # metadata will contain {file->{regions->colors}}
+    metadata = {}
+    for filename in tqdm(os.listdir(cell_path)):
+        fname = filename[:36]
+        segmentation_mask_cell_path = cell_path+filename
+        segmentation_mask_nuclei_path = nuclei_path+filename
+        segmentation_mask_nuclei = np.load(segmentation_mask_nuclei_path)
+        smn = segmentation_mask_nuclei[segmentation_mask_nuclei.files[0]]
+        if smn.shape != img_size[:-1]:
+            smn = transform.resize(smn, output_shape=img_size).astype('int32')
+        segmentation_mask_cell = np.load(segmentation_mask_cell_path)
+        smc = segmentation_mask_cell[segmentation_mask_cell.files[0]]
+        if smc.shape != img_size[:-1]:
+            smc = transform.resize(smc, output_shape=img_size).astype('int32')
+
+        output_img = np.zeros(img_size)
+        img_cell = imread(org_path+fname+'_y.png', as_gray=True)
+        if img_cell.shape != img_size[:-1]:
+            img_cell = transform.resize(img_cell, output_shape=img_size)
+        img_cell = normalize_array(img_cell)
+        max_clip = np.max(img_cell)
+        region_dict = {}
+        for region in skimage.measure.regionprops(smc):
+            output_chan = np.zeros(img_size[:-1])
+            color = np.random.choice([0, 1, 2])
+            region_dict[int(region.label)] = int(color)
+            output_chan[tuple(region.coords.T)] = img_cell[tuple(region.coords.T)]
+            output_chan = normalize_array(output_chan)
+            output_img[:, :, color] += output_chan
+        del smc
+        del img_cell
+        metadata[fname] = region_dict
+        output_img = np.clip(output_img, 0, max_clip)
+        truth = output_img
+        train = np.copy(output_img)
+        grayscale = train.mean(2)
+        train[:, :, 0] = train[:, :, 1] = train[:, :, 2] = grayscale
+        for region in skimage.measure.regionprops(smn):
+            output_chan = np.zeros(img_size[:-1])
+            color = region_dict[region.label]
+            output_chan[tuple(region.coords.T)] = .33
+            train[:, :, color] += output_chan
+        del smn
+        train = np_to_torch_img(train)
+        truth = np_to_torch_img(truth)
+        torch.save(train, new_train_path + fname+'.pt')
+        torch.save(truth, new_truth_path + fname + '.pt')
+        del train
+        del truth
+    with open(metadata_path+'metadata.json', 'w') as fp:
+        json.dump(metadata, fp)
+    return None
 
 
 if __name__ == '__main__':
-    # loop through ground truth samples, compute mean, make the grayscale3chan, normalize g.t and normalize grayscale3chan
-    # data_path = '/nobackup/users/vinhle/data/z_max_slices/'
-
-    # output_size = (3, 256, 256)
-    # preprocess_main(data_path, output_path, output_size, thresh_scale = .5)
-    # test_images(output_path, data_path, 'F030.pt')
-    # channel_transform(train, truth, output, 3)
-    # test_images(output,'012F030.pt')
-    # test_images(output, '102F030.pt')
-    # meta = "data/single_cell/train_tiles/metadata.json"
-    # path1 = "data/single_cell/train_tiles/nuclear_bodies/"
-    # path2 = "data/single_cell/train_tiles/nuclear_outlines/"
-    # with open(meta) as m:
-    #     metadata = json.load(m)
-    # create_synthetic_dataset_als(path1, path2, metadata)
-    np.random.seed(0)
-    segmentation_mask_cell_path = 'data/cell_mask_test.npz'
-    segmentation_mask_nuclei_path = 'data/nuclei_mask_test.npz'
-    segmentation_mask_nuclei = np.load(segmentation_mask_nuclei_path)
-    smn = segmentation_mask_nuclei[segmentation_mask_nuclei.files[0]]
-    segmentation_mask_cell = np.load(segmentation_mask_cell_path)
-    smc = segmentation_mask_cell[segmentation_mask_cell.files[0]]
-    output_img = np.zeros((2048,2048,3))
-    img = imread('data/test.png', as_gray=True)
-    img = normalize_array(img)
-    region_dict = {}
-    for region in skimage.measure.regionprops(smc):
-        output_chan = np.zeros((2048, 2048))
-        color = np.random.choice([0, 1, 2])
-        region_dict[region.label] = color
-        output_chan[tuple(region.coords.T)] = img[tuple(region.coords.T)]
-        output_chan = normalize_array(output_chan)
-        output_img[:, :, color] += output_chan
-    last =  region
-    grayscale = output_img.mean(2)
-    original_img = np.copy(output_img)
-    output_img[:,:,0] = output_img[:,:,1] = output_img[:,:,2] = grayscale
-
-    for region in skimage.measure.regionprops(smn):
-        output_chan = np.zeros((2048, 2048))
-        color = region_dict[region.label]
-        output_chan[tuple(region.coords.T)] = .33
-        output_img[:, :, color] += output_chan
-        original_img[:, :, color] += output_chan
-
-    x = [reg for reg in skimage.measure.regionprops(smc)]
-    last = x[5]
-    altered_img = np.copy(original_img)
-    training_img = output_img
-    gauss = np.random.normal(.3,.2,altered_img.size)
-    gauss = gauss.reshape(altered_img.shape[0], altered_img.shape[1], altered_img.shape[2])
-    altered_img += gauss
-    acopy = np.copy(altered_img)
-    color = region_dict[last.label]
-    acopy[tuple(last.coords.T)] = 1
-    to_use = altered_img[:,:,color]
-    to_use_org = original_img[:,:,color]
-    mse = ((to_use_org[tuple(last.coords.T)] - to_use[tuple(last.coords.T)])**2).mean()
-    print(mse)
-    # fig,ax = plt.subplots(1,2)
-    # ax[0].imshow(smn)
-    # ax[1].imshow(smc)
-    # plt.show()
-    # sample_space = np.array([[x,y] for x in range(900) for y in range(900)])
-    # points = [[0,0], [256,256], [256, 512]]
-    # x=  remove_points(sample_space, points)
-    # print(x.shape)
-    fig,ax = plt.subplots(2,2)
-    ax[0][0].imshow(training_img)
-    ax[0][0].set_title('Training Img')
-    ax[0][1].imshow(original_img)
-    ax[0][1].set_title('Original')
-    ax[1][0].imshow(altered_img)
-    ax[1][0].set_title('Altered')
-    ax[1][1].imshow(acopy)
-    ax[1][1].set_title('Highlighted')
-
-    plt.show()
-
+    cell_path = '/nobackup/users/vinhle/data/hpa_data/hpa_cell_mask/'
+    nuclei_path = '/nobackup/users/vinhle/data/hpa_data/hpa_nuclei_mask/'
+    org_path = '/nobackup/users/vinhle/data/hpa_data/hpa_original/'
+    org_path2 = '/nobackup/users/vinhle/data/hpa_data/hpa_original_test/'
+    new_train_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/train/'
+    new_truth_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/truth/'
+    metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
+    img_size = (512, 512, 3)
+    hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path, img_size=img_size)
 
 
 

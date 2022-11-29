@@ -35,14 +35,14 @@ class ProCodes(torch.utils.data.Dataset):
         :return: image as a tensor
         """
         inp_path, mask_path = self.paths[0][idx], self.paths[1][idx]
-        i = inp_path.find("train")
+        # i = inp_path.find("train")
         # zero_mask_path = f'{inp_path[:i]}/classification_mask/{inp_path[inp_path.rfind("/") + 1:]}'
         # zero_mask = torch.load(zero_mask_path)
         inp, mask = torch.load(inp_path), torch.load(mask_path)
         if self.transforms:
             inp = self.transforms(inp)
-        inp = torch.Tensor(inp)
-        mask = torch.Tensor(mask)
+        inp = inp.clone().detach().type(torch.float)
+        mask = mask.clone().detach().type(torch.float)
         size = inp.size()[1]
         inp = inp.view((3, size, size))
         mask = mask.view((3, size, size))
@@ -80,8 +80,8 @@ class ProCodesDataModule(pl.LightningDataModule):
         self.xtrain, self.xtest, self.ytrain, self.ytest = train_test_split(self.items[0], self.items[1], test_size=self.test_size)
         # want val size == test size
         self.xval, self.xtest, self.yval, self.ytest = train_test_split(self.xtest, self.ytest, test_size=0.5)
-        print("VAL SET EXAMPLES: ", self.xval)
-        print("TEST SET EXAMPLES: ", self.xtest)
+        print("VAL SET EXAMPLES: ", self.xval[0:10])
+        print("TEST SET EXAMPLES: ", self.xtest[0:10])
         if stage in (None, "test"):
             self.test = ProCodes([self.xtest, self.ytest])
         if stage in (None, "fit"):
