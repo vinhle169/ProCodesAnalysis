@@ -68,7 +68,9 @@ def normalize_array_t(array):
 
 
 def normalize_array(array):
-    return (array - np.min(array)) / (np.max(array) - np.min(array))
+
+    denom = np.max(array) - np.min(array)
+    return (array - np.min(array)) / denom
 
 
 def plot_procode_torch(path, img_shape=(2048, 2048, 3), amplify=0, normalize=False, filename=None):
@@ -597,18 +599,20 @@ def hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, n
         segmentation_mask_nuclei_path = nuclei_path+filename
         segmentation_mask_nuclei = np.load(segmentation_mask_nuclei_path)
         smn = segmentation_mask_nuclei[segmentation_mask_nuclei.files[0]]
+
         if smn.shape != img_size[:-1]:
-            smn = transform.resize(smn, output_shape=img_size).astype('int32')
+            smn = transform.resize(smn, output_shape=img_size[:-1], preserve_range=True).astype(np.int32)
         segmentation_mask_cell = np.load(segmentation_mask_cell_path)
         smc = segmentation_mask_cell[segmentation_mask_cell.files[0]]
-        if smc.shape != img_size[:-1]:
-            smc = transform.resize(smc, output_shape=img_size).astype('int32')
 
+        if smc.shape != img_size[:-1]:
+            smc = transform.resize(smc, output_shape=img_size[:-1], preserve_range=True).astype(np.int32)
         output_img = np.zeros(img_size)
         img_cell = imread(org_path+fname+'_y.png', as_gray=True)
         if img_cell.shape != img_size[:-1]:
-            img_cell = transform.resize(img_cell, output_shape=img_size)
+            img_cell = transform.resize(img_cell, output_shape=img_size[:-1])
         img_cell = normalize_array(img_cell)
+
         max_clip = np.max(img_cell)
         region_dict = {}
         for region in skimage.measure.regionprops(smc):
@@ -632,8 +636,10 @@ def hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, n
             output_chan[tuple(region.coords.T)] = .33
             train[:, :, color] += output_chan
         del smn
+
         train = np_to_torch_img(train)
         truth = np_to_torch_img(truth)
+
         torch.save(train, new_train_path + fname+'.pt')
         torch.save(truth, new_truth_path + fname + '.pt')
         del train
@@ -653,8 +659,6 @@ if __name__ == '__main__':
     metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
     img_size = (512, 512, 3)
     hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path, img_size=img_size)
-
-
 
 
 
