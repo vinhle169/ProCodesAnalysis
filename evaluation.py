@@ -10,6 +10,7 @@ from skimage.metrics import structural_similarity as ssim
 from unet_lightning import UnetLightning
 from pytorch_lightning import Trainer, seed_everything
 
+
 def elementwise_accuracy(img_1, img_2, ignore_zeros=False, deviation=0.001):
     '''
     Calculates Error between two images elementwise
@@ -234,7 +235,8 @@ class identifiable_submatrices:
                     self.clean_matrices[row_order].append([new_mat, col_order])
 
 
-def generate_model_outputs(model_directory, model_list, input_img_list, img_size=(1,3,256,256), output_path='', parallel=True):
+def generate_model_outputs(model_directory, model_list, input_img_list, img_size=(1, 3, 256, 256), output_path='',
+                           parallel=True):
     """
     :param model_directory: location of all models being used
     :param model_list: list of models by name being used in above location
@@ -265,136 +267,133 @@ def generate_model_outputs(model_directory, model_list, input_img_list, img_size
         del checkpoint
 
 
-def plot_different_outputs(file_paths, org_img_paths, ground_truth, name, img_size=[256, 256, 3]):
-    """
-    :param file_paths: list of paths of output images
-    :param org_img_paths: list of input images
-    :param ground_truth: list of ground truth images
+def plot_different_outputs_HPA(filenames: list, checkpoint_path: str, data_path: str, plot_name: str ='example', dimensions: tuple = (512, 512)):
+    '''
+    :param filenames: filenames
+    :param checkpoint: path to checkpoint
+    :param data_path: path to data, this folder should contain a train/ folder and a truth/ folder
+    :param plot_name: name of plot to be saved, optional
+    :param dimensions: dimensions of the images, [width, height]
     :return:
-    """
-
-    row_count = 0
-    output_files = {}
-    for img_name in file_paths:
-        output_files.setdefault(img_name[-4],[])
-        output_files[img_name[-4]].append(img_name)
-    print('num rows:', (1 + 1 + len(output_files[img_name[-4]])) * len(org_img_paths))
-    fig, axs = plt.subplots((1 + 1 + len(output_files[img_name[-4]])) * len(org_img_paths), 4)
-    fig.set_figheight(10*len(axs))
-    fig.set_figwidth(50)
-    for i in range(len(org_img_paths)):
-        print(i, 'ith image---------------------')
-        # plot test input
-        curr_img = torch.load(org_img_paths[i])
-        axs[row_count][0].set_ylabel(f"input image", fontsize=40)
-        for channel in range(len(curr_img)+1):
-            if channel != 0:
-                mini = curr_img[channel-1].view(img_size[0:2]).cpu()
-            else:
-                mini = curr_img.cpu()
-            mini = mini.detach()
-            mini = mini.numpy()
-            # mini *= 10
-            mini = normalize_array(mini)
-            if channel == 0:
-                mini = np.stack([i for i in mini], axis=-1)
-                axs[row_count][channel].imshow(mini, vmin=0, vmax=1)
-            else:
-                one_channel = np.zeros(img_size)
-                one_channel[:, :, channel-1] = mini
-                axs[row_count][channel].imshow(one_channel, vmin=0, vmax=1)
-        del curr_img
-        row_count += 1
-
-        # plot ground truth
-        curr_img = torch.load(ground_truth[i])
-        axs[row_count][0].set_ylabel(f"ground truth image", fontsize=40)
-        combined = []
-        for channel in range(len(curr_img)):
-            one_channel = np.zeros(img_size)
-            mini = curr_img[channel].view(img_size[0:2]).cpu()
-            mini = mini.detach()
-            mini = mini.numpy()
-            # mini *= 10
-            print(mini.shape)
-            mini = normalize_array(mini)
-
-            one_channel[:, :, channel] = mini
-            axs[row_count][channel+1].imshow(one_channel, vmin=0, vmax=1)
-            combined.append(mini)
-        combined = np.stack(combined, -1)
-        axs[row_count][0].imshow(combined)
-        del curr_img
-        del combined
-
-        # plot resulting images
-        row_count += 1
-        outputs = sorted(output_files[str(i)], key=lambda x: int(x[x.find('/')+1:x.find('_',x.find('/'))]))
-        print(outputs)
-        for img_p in outputs:
-            curr_img = torch.load(img_p)[0].cpu()
-            combined = []
-            print(img_p[0:img_p.find('.')])
-            axs[row_count][0].set_ylabel(img_p[img_p.find('/')+1:img_p.find('.')], fontsize=50)
-            for channel in range(len(curr_img)):
-                one_channel = np.zeros(img_size)
-                mini = curr_img[channel].view(img_size[0:2]).detach()
-
-                mini = mini.numpy()
-
-                if mini.max() != 0 and mini.min() != mini.max():
-                    mini = normalize_array(mini)
-                one_channel[:, :, channel] = mini
-                im = axs[row_count][channel + 1].imshow(one_channel, vmin=0, vmax=1)
-                mini = np.reshape(mini, img_size[0:2])
-                combined.append(mini)
-            combined = np.stack(combined, -1)
-            print(combined.min(), combined.max(), 'combined')
-            axs[row_count][0].imshow(combined, vmin=0, vmax=1)
-            del curr_img
-            row_count += 1
-    cols = ['Combined', 'Channel 0', 'Channel 1', 'Channel 2']
-    for ax, col in zip(axs[0], cols):
-        ax.set_title(col, fontsize=50)
-    # fig.subplots_adjust(right=0.8)
-    # cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    # fig.colorbar(im, cax=cbar_ax)
-    plt.setp(axs, xticks=[], yticks=[])
-    plt.savefig(f'{name}.png')
-    print('Done~~~~~~~~~~~~~~~~~~~~')
-
-
-
-if __name__ == '__main__':
-    filenames = ['201F041.pt', '012F051.pt', '210F051.pt']
+    '''
     u, _ = create_pretrained('resnet34', None)
     model = UnetLightning(u)
-    checkpoint = torch.load("models/unet/UNET-chan-permute-epoch=6499.ckpt")
+    checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
+    dims = (1, 3) + dimensions
     results = []
     loss_fn = nn.MSELoss(reduction='mean')
     for file in tqdm(filenames):
-        x = torch.load(f'/nobackup/users/vinhle/data/256_channel_permutation/train/{file}')
-        y = torch.load(f'/nobackup/users/vinhle/data/256_channel_permutation/truth/{file}')
-        y = y.view([1, 3, 256, 256])
-        x = x.view([1, 3, 256, 256])
+        x = torch.load(f'{data_path}train/{file}')
+        y = torch.load(f'{data_path}truth/{file}')
+        x = x.clone().detach().type(torch.float)
+        y = y.clone().detach().type(torch.float)
+        y = y.view(dims)
+        x = x.view(dims)
         y_hat = model.predict(x)
         loss = loss_fn(y_hat, y)
         x = make_plotable(x[0])
         y_hat = make_plotable(y_hat[0])
         y = make_plotable(y[0])
-        results.append([y,y_hat,loss,file])
+        results.append([x, y_hat, y, loss, file])
 
-    results.sort(key = lambda x: x[2])
-    fig, ax = plt.subplots(3, 2)
-    for i in tqdm(range(3)):
-        for j in range(2):
-            if j == 1:
-                ax[i][j].title.set_text(f'{results[i][3]}, Loss {round(results[i][2].item(), 4)}')
+    results.sort(key=lambda x: x[3])
+    fig, ax = plt.subplots(len(filenames), 3, figsize=(25, 20))
+
+    for i in tqdm(range(len(filenames))):
+        for j in range(3):
+            if j == 2:
+                ax[i][j].set_xlabel(f'Loss {round(results[i][3].item(), 4)}', fontsize=16)
             ax[i][j].imshow(results[i][j])
-            ax[i][j].axis('off')
+    column_titles = ['Test Image', 'Result', 'Ground Truth']
 
-    plt.savefig('sortedbyloss.png')
+    for a, row in zip(ax[:, 0], range(len(filenames))):
+        a.set_ylabel(results[row][4][0:10], rotation=0, fontsize=16)
+
+    for i, a in enumerate(ax.flatten()[:3]):
+        a.set_title(f'{column_titles[i]}', fontsize=20)
+    fig.suptitle('Results, Sorted By Loss', fontsize=24)
+
+    fig.subplots_adjust(top=0.92, wspace=0.05, hspace=0.20, left=0.200, right=0.800)
+    plt.savefig(f'{plot_name}.png')
 
 
+def hpa_classification_accuracy(test_files: list, checkpoint_path: str, test_path: str, cell_seg_path: str, metadata_path: str, dimensions: tuple = (512, 512)):
+    '''
+    :param test_files: filenames
+    :param checkpoint_path: path to checkpoint
+    :param test_path: path to test data
+    :param cell_seg_path: path to cell segmentation masks
+    :param metadata_path: path to metadata json file
+    :param dimensions: dimensions of the images, [width, height]
+    :return:
+    '''
+    metadata = open(metadata_path)
+    metadata = json.load(metadata)
+    def mapping_function(x, filename):
+        if x!=0:
+            return metadata[filename][str(x)]+1
+        else:
+            return 0
+    v_color = np.vectorize(mapping_function)
+
+    u, _ = create_pretrained('resnet34', None)
+    model = UnetLightning(u)
+    checkpoint = torch.load(checkpoint_path)
+    model.load_state_dict(checkpoint["state_dict"])
+    model.eval()
+    accuracies = []
+    for test_f in tqdm(test_files):
+        x = torch.load(f'{test_path}{test_f}.pt')
+        x = x.clone().detach().type(torch.float)
+        x = x.view((1,3) + dimensions)
+        y_hat = model.predict(x)
+
+
+        colored_mask = np.load(cell_seg_path+test_f+'.npz')
+        c_mask = colored_mask[colored_mask.files[0]]
+        c_mask = transform.resize(c_mask, output_shape=dimensions, preserve_range=True).astype(np.int32)
+        mask_over_zero = torch.from_numpy(c_mask > 0)
+        color_mask = torch.from_numpy(v_color(c_mask, test_f))
+
+        y_hat = y_hat.max(axis=1, keepdim=True).indices + 1
+        acc = y_hat == color_mask
+        acc = acc.float()
+        acc *= mask_over_zero.float()
+        accuracies.append(torch.sum(acc)/torch.sum(mask_over_zero))
+    accs = np.array(accuracies)
+    return np.mean(accs)
+
+
+if __name__ == '__main__':
+    filenames = [
+        '79e74f26-bbc9-11e8-b2bc-ac1f6b6435d0.pt',
+        '63b92796-bbb1-11e8-b2ba-ac1f6b6435d0.pt',
+        'c4e26ac2-bbc6-11e8-b2bc-ac1f6b6435d0.pt',
+        '801d7256-bba8-11e8-b2ba-ac1f6b6435d0.pt',
+        '6a5d50c6-bbad-11e8-b2ba-ac1f6b6435d0.pt',
+        '21dc6a76-bbbc-11e8-b2ba-ac1f6b6435d0.pt',
+        'a8ae3280-bba5-11e8-b2ba-ac1f6b6435d0.pt',
+        '4b0fe352-bbbf-11e8-b2ba-ac1f6b6435d0.pt',
+        '6e0e22ce-bbb0-11e8-b2ba-ac1f6b6435d0.pt',
+        'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0.pt'
+        ]
+    # filenames = [
+    #     '79e74f26-bbc9-11e8-b2bc-ac1f6b6435d0',
+    #     '63b92796-bbb1-11e8-b2ba-ac1f6b6435d0',
+    #     'c4e26ac2-bbc6-11e8-b2bc-ac1f6b6435d0',
+    #     '801d7256-bba8-11e8-b2ba-ac1f6b6435d0',
+    #     '6a5d50c6-bbad-11e8-b2ba-ac1f6b6435d0',
+    #     '21dc6a76-bbbc-11e8-b2ba-ac1f6b6435d0',
+    #     'a8ae3280-bba5-11e8-b2ba-ac1f6b6435d0',
+    #     '4b0fe352-bbbf-11e8-b2ba-ac1f6b6435d0',
+    #     '6e0e22ce-bbb0-11e8-b2ba-ac1f6b6435d0',
+    #     'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0'
+    #     ]
+    data_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
+    checkpoint = "models/unet/UNET-hpa-0064.ckpt"
+    cell_path = '/nobackup/users/vinhle/data/hpa_data/hpa_cell_mask/'
+    metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/metadata.json'
+    plot_different_outputs_HPA(filenames, checkpoint, data_path)
+    # print(hpa_classification_accuracy(filenames, checkpoint, data_path, cell_path, metadata_path))

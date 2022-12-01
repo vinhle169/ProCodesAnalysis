@@ -598,15 +598,16 @@ def hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, n
         segmentation_mask_cell_path = cell_path+filename
         segmentation_mask_nuclei_path = nuclei_path+filename
         segmentation_mask_nuclei = np.load(segmentation_mask_nuclei_path)
-        smn = segmentation_mask_nuclei[segmentation_mask_nuclei.files[0]]
 
+        smn = segmentation_mask_nuclei[segmentation_mask_nuclei.files[0]]
         if smn.shape != img_size[:-1]:
             smn = transform.resize(smn, output_shape=img_size[:-1], preserve_range=True).astype(np.int32)
+
         segmentation_mask_cell = np.load(segmentation_mask_cell_path)
         smc = segmentation_mask_cell[segmentation_mask_cell.files[0]]
-
         if smc.shape != img_size[:-1]:
             smc = transform.resize(smc, output_shape=img_size[:-1], preserve_range=True).astype(np.int32)
+
         output_img = np.zeros(img_size)
         img_cell = imread(org_path+fname+'_y.png', as_gray=True)
         if img_cell.shape != img_size[:-1]:
@@ -658,7 +659,7 @@ if __name__ == '__main__':
     new_truth_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/truth/'
     metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
     img_size = (512, 512, 3)
-    hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path, img_size=img_size)
+    # hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path, img_size=img_size)
 
 
 
