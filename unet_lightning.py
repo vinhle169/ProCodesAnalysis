@@ -56,19 +56,34 @@ class UnetLightning(pl.LightningModule):
         return pred
 
 
-def main(path, model_path, epochs=1, batch_size=1, gpus=0, checkpoint_location=None):
+def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int = 1, gpus : int = 0,
+          checkpoint_location: str = None):
+    '''
+    Training function for U-Net model
+    :param data_paths: list of paths to train and truth folder, where train is first item and truth is second
+                        ex input: ["train_data/", "truth_data"]
+    :param model_path: path to model
+    :param epochs: number of epochs the model trains for
+    :param batch_size: batch size of data given to model
+    :param gpus: number of gpus for pytorch to utilize
+    :param checkpoint_location: if loading from a previous checkpoint, pass the directory of the checkpoint
+    :return: Nothing, but the model should be saved every 5 epochs at model_path
+    '''
     start = time.time()
     seed_everything(22, workers=True)
+
+    # Initialize model, and load in checkpoint if necessary
     unet, _ = create_pretrained('resnet34', None)
     if checkpoint_location:
         unet_pl = UnetLightning.load_from_checkpoint("/path/to/checkpoint.ckpt")
     else:
         unet_pl = UnetLightning(unet, learning_rate=0.0001)
-
-    z = ProCodesDataModule(data_dir=path, batch_size=batch_size,
+    # Initialize data module for loading in data
+    z = ProCodesDataModule(data_dir=data_path, batch_size=batch_size,
                            test_size=0.2)
     train_loader = z.train_dataloader()
     val_loader = z.validation_dataloader()
+    # Setup logger to track metrics for training over time
     logger = TensorBoardLogger("runs/", name="unet_hpa")
     checkpoint_callback = ModelCheckpoint(
         monitor="Validation Loss",
@@ -79,11 +94,12 @@ def main(path, model_path, epochs=1, batch_size=1, gpus=0, checkpoint_location=N
         auto_insert_metric_name=False,
         filename="UNET-hpa-{epoch:04d}",
     )
-
+    # Set up the trainer function and begin training
     trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback],
                       check_val_every_n_epoch=1, logger=logger, strategy="ddp_find_unused_parameters_false")
     trainer.fit(unet_pl, train_loader, val_loader)
-    print((time.time() - start)/60, 'minutes to run')
+    print((time.time() - start) / 60, 'minutes to run')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -101,10 +117,4 @@ if __name__ == '__main__':
     path = [args.train_path, args.label_path]
     gpus = int(args.gpus) if args.gpus else 1
     checkpoint = args.checkpoint if args.checkpoint else None
-    main(path, model_path, epochs, batch_size, gpus, checkpoint)
-
-
-
-
-
-
+    train(path, model_path, epochs, batch_size, gpus, checkpoint)
