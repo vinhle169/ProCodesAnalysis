@@ -4,16 +4,19 @@
 This is the repository for the development of ProCodes image analysis. \
 Specifically performing segmentations on neurons via colorization using a U-Net a type of machine learning model.  
 Ex:  
-![](example_img.png)
-
+Example Inputs             |  Model Architecture
+:-------------------------:|:-------------------------:
+![](example_img.png)       |  ![U-Net Architecture](unet.png)
+ 
 Before using any python files make sure everything in requirements.txt is installed:  
  <code>pip install -r requirements.txt</code>  or
  <code>conda install --file requirements.txt</code>  
   
 Also ensure that you have the following ready:  
-* A directory with the data as .pt files, with at least two different folders one for training and one for ground truth. Currently only 3 channel 
+* A directory with images as .pt files, with at least two different folders one for training and one for ground truth. 
+Currently only 3 channel 
 images are supported but as for image height/width sizes can be anything, but need to remain consistent within the same 
-folder. Dimensions must be [3 x Width x Height]
+folder. Dimensions must be [3 x Width x Height] for training and ground truth.
 * A directory to store the model checkpoints
 * CUDA-ready GPU, although not 100% necessary training w/ GPU already takes hours upon hours. Without will be endless.
 
