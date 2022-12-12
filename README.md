@@ -21,8 +21,14 @@ folder. Dimensions must be [3 x Width x Height] for training and ground truth.
 * CUDA-ready GPU, although not 100% necessary training w/ GPU already takes hours upon hours. Without will be endless.
 
 ## utils.py
-Supports loading images, displaying the codebook, and matching pursuit.
-
+Contains a multitude of helper functions for various tasks.  
+* otsu_threshold_channelwise, Will perform otsu thresholding on an input image able to be scaled by a threshold factor
+* random_channel_pop, Picks a random channel to remove from image, and returns the new image and the channel separately
+* load_tif, Loads a tif file from a given path and 1-max normalizes.
+* load_codebook, With a path loads in a csv file as a pandas database
+* normalize_array and normalize_array_t, Normalizes a numpy array or a torch tensor respectively
+* display_codebook, Displays a codebook as a heatmap on matplotlib.pyplot given a path to a csv
+* 
 ## evaluation.py
 Has functions for calculating accuracy/similarity between two images:  
 1. Elementwise Accuracy <code>elementwise_accuracy(img_1, img_2, deviation=0.001)</code>

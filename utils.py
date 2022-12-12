@@ -21,6 +21,12 @@ import itertools
 import time
 
 def otsu_threshold_channelwise(image, thresh_scale: float = 1.0):
+    '''
+    Performs otsu thresholding per channel of an image
+    :param image: input image as a torch tensor, should be size (1,3,w,h) (3,w,h)
+    :param thresh_scale: the factor by which how strong the thresholding will be
+    :return:
+    '''
     mask = []
     if image.size()[0] == 1:
         image = image[0]
@@ -37,8 +43,12 @@ def otsu_threshold_channelwise(image, thresh_scale: float = 1.0):
     return torch.Tensor(new_img), running_diff
 
 
-def random_channel(image, multi_image=False):
-    # assuming channels in the 1st dimension
+def random_channel(image):
+    '''
+    Picks a random channel to remove from image, and returns the new image and the channel separately
+    :param image: should be size (3,w,h)
+    :return:
+    '''
     shape = image.shape
     channel_i = np.random.randint(0, shape[0])
     if torch.is_tensor(image):
@@ -51,7 +61,6 @@ def random_channel(image, multi_image=False):
 
 def load_tif(path):
     img = volread(path)
-    # equalizes/normalizes channels mark
     img = img.astype(np.float32) / img.max((-1, -2), keepdims=True)
     return img
 
@@ -71,60 +80,6 @@ def normalize_array(array):
 
     denom = np.max(array) - np.min(array)
     return (array - np.min(array)) / denom
-
-
-def plot_procode_torch(path, img_shape=(2048, 2048, 3), amplify=0, normalize=False, filename=None):
-    if type(path) is str:
-        img = torch.load(path)
-    else:
-        img = path
-        path = 'No Name'
-    if amplify:
-        print('amplified')
-        img *= amplify
-        # normalize to max of 1
-    if img.size()[0] == 1:
-        img = img[0]
-    fig, axs = plt.subplots(1, 4)
-    fig.set_figheight(10)
-    fig.set_figwidth(20)
-    if img.size()[0] == 4:
-        for channel in range(4):
-            one_channel = np.zeros(img_shape)
-            mini = img[channel].view(img_shape[0:2]).detach()
-            mini = mini.numpy()
-            if normalize:
-                mini = normalize_array(mini)
-            if channel == 0:
-                axs[channel].imshow(mini)
-                continue
-            one_channel[:, :, channel-1] = mini
-            axs[channel].imshow(one_channel)
-
-    elif img.size()[0] == 3:
-        combined = []
-        for channel in range(3):
-            one_channel = np.zeros(img_shape)
-            mini = img[channel].view(img_shape[0:2]).detach()
-            mini = mini.numpy()
-            if normalize:
-                mini = normalize_array(mini)
-            one_channel[:, :, channel] = mini
-            axs[channel + 1].imshow(one_channel)
-            axs[channel + 1].axis('off')
-            mini = np.reshape(mini, img_shape[0:2])
-            combined.append(mini)
-        combined = np.stack(combined, -1)
-        axs[0].imshow(combined)
-        axs[0].axis('off')
-    plt.tight_layout()
-    plt.suptitle(path, y=0.80, fontsize='xx-large')
-    if filename:
-        plt.savefig(filename)
-    else:
-        plt.show()
-
-
 
 
 def display_codebook(path):
