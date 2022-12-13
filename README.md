@@ -21,7 +21,8 @@ folder. Dimensions must be [3 x Width x Height] for training and ground truth.
 * CUDA-ready GPU, although not 100% necessary training w/ GPU already takes hours upon hours. Without will be endless.
 
 ## utils.py
-Contains a multitude of helper functions for various tasks.  
+Contains a multitude of helper functions for various tasks. Feel free to import and use for anything that's also not in the project. 
+<code> import utils </code>
 * otsu_threshold_channelwise, Will perform otsu thresholding on an input image able to be scaled by a threshold factor
 * random_channel_pop, Picks a random channel to remove from image, and returns the new image and the channel separately
 * load_tif, Loads a tif file from a given path and 1-max normalizes.
@@ -57,12 +58,12 @@ to create a custom dataset using random combinations of singular cell bodies and
 Similar to the 3 Channel Grayscale type of data. 
 
 ## evaluation.py
-Has functions for calculating accuracy/similarity between two images:  
-1. Elementwise Accuracy <code>elementwise_accuracy(img_1, img_2, deviation=0.001)</code>
-2. Mean Squared Error <code>mse(img_1, img_2)</code>
-3. Structural Similarity Index <code>ssim_err(img_1, img_2, img=False)</code>  
+Has functions for evaluation and plotting.  
+* Elementwise Accuracy <code>elementwise_accuracy(img_1, img_2, ignore_zeros=False, deviation=0.001)</code>
+* Mean Squared Error <code>mse(img_1, img_2)</code>
+* Structural Similarity Index <code>ssim_err(img_1, img_2, channel_axis=None, img=False)</code>  
     - <code>img</code> is a boolean to decide whether the SSIM image is displayed
-4. Identifiable Submatrices, class
+* Identifiable Submatrices, class
 >        Finds all possible special matrices given codebook
 >        Special matrix in this case is a 6 x 4 matrix where:
 >        Condition 1:
@@ -98,3 +99,19 @@ Has functions for calculating accuracy/similarity between two images:
         [x.idx_to_col[i] for i in [10,  7,  0, 17]]
         ->
         ['D7', 'D11', 'A2', 'F8']
+
+* Generating Outputs from Model <code> generate_model_outputs(model_directory, model_list, input_img_list, 
+img_size=(1, 3, 256, 256), output_path='', parallel=True) </code> 
+* Plot Outputs From HPA Model <code>plot_different_outputs_HPA(filenames: list, checkpoint_path: str, 
+data_path: str, plot_name: str ='example', dimensions: tuple = (512, 512)) </code>
+* Get Classification Accuracy for HPA Model <code> hpa_classification_accuracy(test_files: list, checkpoint_path: str, 
+test_path: str, cell_seg_path: str, metadata_path: str, dimensions: tuple = (512, 512)) </code>  
+  
+## dataset.py
+Python file necessary for building the dataset to run the model through. Makes use of PyTorch dataset module.  
+<code>ProCodesDataModule</code> needs data_path(a list in the form [path to train data, path to truth data]), batch_size which is size of batches to return,
+and test_size which is the proportion of the dataset which is dedicated to be the test set.  
+  
+## unet_lightning.py
+Python callable, which takes in arguments 'epochs', 'train_path', 'label_path', 'model_path', and optional arguments 'batch_size', 'gpus', and 'checkpoint'.
+This callable will run a trainer on the U-Net for epochs amount of epochs given the train path and label path, and will output models at the model path.
