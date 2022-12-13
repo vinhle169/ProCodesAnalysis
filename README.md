@@ -28,7 +28,34 @@ Contains a multitude of helper functions for various tasks.
 * load_codebook, With a path loads in a csv file as a pandas database
 * normalize_array and normalize_array_t, Normalizes a numpy array or a torch tensor respectively
 * display_codebook, Displays a codebook as a heatmap on matplotlib.pyplot given a path to a csv
-* 
+* fixed_blobs, With a set of parameters will create a sparse fixed 2-D array
+  ![Fixed Grid](fixed_grid.png)
+* color_blobs, Given an image return the same image and a new image where it is just n blobs per channel colored in
+* plot_loss, With an array of losses, plot Loss vs Epochs and save it
+* matching_pursuit, Given an image, and codebook values, and iterations, compute matching pursuit to segment an image
+* three_channel_grayscale, given two imgs as numpy arrays(width,height,channel), an image and a mask, return a grayscale image with but with coloring given a mask. 
+  ![3 channel grayscale](3channel_gray.png)  
+* classification_accuracy, with image, label, and mask of all non-zero pixels of label, compute mean top-1 classification accuracy over all non-zero pixels
+* preprocess_and_create_3cg_data, given a path to original data and a path to where output data should be, will create 
+a new dataset with 3 channel grayscale and blob properties.
+* preprocess_main, wrapper function for the function above, helps create directories if needed.
+* connected_components, grabs the connected components from an image.
+* random_pixel_data, arguments it takes: path to original data, new data path, output shape of images, and minimum size of components. 
+It then creates new dataset where in each channel, the largest component has a single pixel colored in.
+* remove_outliers, given an image(numpy), removes the outliers
+* make_plotable, makes a torch tensor, normally in the shape of [channels, w, h] into a matplotlib plotable object
+* save_img, takes a torch tensor, and then plots it and saves the image
+* channel_transform, creates a new training dataset from an existing one where the channels of all the images are permutated.
+* kaggle_hpa_renamer, renames the hpa dataset to be more manageable and includes a metadata file
+* removes_points, helper function for create_synthetic_dataset_hpa, takes in points a list of all used points and sample space all possible new points
+ and removes illegal points from the sample_space
+* generate_x_y, also helper function for create_synthetic_dataset_hpa, generates a random positive mask
+* create_synthetic_dataset_hpa, takes path to cell bodies, path to outlines, metadata path, max amt of images, cells per channel, and image shape, 
+to create a custom dataset using random combinations of singular cell bodies and outlines.
+* np_to_torch_img: convert a numpy array(w, h, channels) to torch (channels, w, h)
+* hpa_kaggle_transform_data: takes in all the necessary paths to transform 3 types of HPA kaggle data to make a new dataset. 
+Similar to the 3 Channel Grayscale type of data. 
+
 ## evaluation.py
 Has functions for calculating accuracy/similarity between two images:  
 1. Elementwise Accuracy <code>elementwise_accuracy(img_1, img_2, deviation=0.001)</code>

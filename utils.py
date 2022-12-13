@@ -91,13 +91,14 @@ def display_codebook(path):
 def fixed_blobs(img_shape, v_stride: int, w_stride: int, blob_len: int, v_padding: int = 0,
                 w_padding: int = 0, boolean: bool = False):
     """
+    Return a fixed grid, given the dimensions and parameters
     :param img_shape: tuple/list (h x w)
     :param v_stride: stride vertically between top-left points of blobs
     :param w_stride: stride horizontally between top-left points of blobs
     :param blob_len: length of the sides of the blobs, they are square
     :param v_padding: padding top and bottom where there shouldn't be blobs
     :param w_padding: padding left and right where there shouldn't be blobs
-    :
+    :param boolean: a boolean that represents whether to return the array as a bool array
     """
 
     # make sure parameters are correct
@@ -137,7 +138,7 @@ def fixed_blobs(img_shape, v_stride: int, w_stride: int, blob_len: int, v_paddin
 def color_blobs(img, blob_radius=50, num_blobs=1):
     '''
     :param img: in the shape -> channel x height x width
-    :return: grayscale image where n blobs are filled in with the right color
+    :return: image and new image where n blobs per channel are colored in
     '''
 
     def set_blob(img, index):
@@ -147,11 +148,13 @@ def color_blobs(img, blob_radius=50, num_blobs=1):
         return img
 
     img_c = torch.clone(img)
+    print('shape',img_c.shape[0])
     for channel in range(img_c.shape[0]):
         img_i = img[channel]
         # possible_blobs = torch.nonzero(img_i > 0)
         threshold = img_i >= (torch.max(img_i) * .3)
         possible_blobs = torch.nonzero(threshold > 0)
+        print(possible_blobs)
         blob_mask = torch.zeros(img_i.shape)
         for i in range(num_blobs):
             # choose a random center for a blob
@@ -161,11 +164,11 @@ def color_blobs(img, blob_radius=50, num_blobs=1):
             blob_mask = set_blob(blob_mask, blob_index)
         img_c[channel] = blob_mask
 
-    # return coordinates that are in the blob(s)
     return img, img * img_c
 
 
 def plot_loss(train_losses, title, savefig=False):
+    # Given losses as an array, plot it
     x = [i for i in range(len(train_losses))]
     y = train_losses
     data = {"Epochs": x, "Loss": y}
@@ -185,11 +188,8 @@ def matching_pursuit(x, A, max_iters, thr=1):
     :return z: deconvolution of the image
     '''
     # this is necessary if doing more than one iteration, for the residuals update to work
-    print(A)
     A = A / np.linalg.norm(A, axis=1)[:, None]
-    print(A)
     z = np.zeros((A.shape[0], *x.shape[1:]))
-    print(A.shape, x.shape)
     x = x.copy()  # initialize "residuals" to the image itself
 
     # mask for whether each pixel has converged or not; we already know background's zero
@@ -217,32 +217,40 @@ def matching_pursuit(x, A, max_iters, thr=1):
     return z
 
 
-def three_channel_grayscale(img, mask):
+def three_channel_grayscale(img, mask=None):
+    if not mask:
+        mask = np.ones(img.shape)
     assert img.size() == mask.size()
+    # get grayscale values
     grayscale = img.mean(2)
     input_img = torch.zeros_like(img)
-    input_img[:,:,0] = input_img[:,:,1] = input_img[:,:,2] = grayscale
+    # place the grayscale values in each channel
+    input_img[:, :, 0] = input_img[:, :, 1] = input_img[:, :, 2] = grayscale
+    # mask to place color where it should be colored
     input_img[mask] = img[mask]
     return input_img
 
 
 def classification_accuracy(img, label, mask_over_zero):
+    # Get the "classifications" of each pixel
     img_max = img.max(axis=1, keepdim=True).indices
     label_max = label.max(axis=1, keepdim=True).indices
+    # Check which pixels match between img and label
     acc = img_max == label_max
+    # Compute accuracy
     acc = acc.float()
     acc *= mask_over_zero.float()
     return torch.sum(acc)/torch.sum(mask_over_zero)
 
 
-def preprocess_and_create_data(data_path: str, output_path: str, output_size: tuple, preprocess, thresh_scale: float=1.0):
+def preprocess_and_create_3cg_data(data_path: str, output_path: str, output_size: tuple, preprocess, thresh_scale: float=1.0):
     '''
-    Function to preprocess and create new training data
+    Function to preprocess and create new training data from procodes data -> 3 channeled annotated mostly grayscale imgs
     :param data_path:
     :param output_path:
     :param output_size:
     :param preprocess: a preprocessing function
-    :return:
+    :return: nothing but create new data in output_path
     '''
     mask = fixed_blobs(output_size[::-1], int(output_size[1]/16), int(output_size[1]/16),
                        int(output_size[1]/32), int(output_size[1]/64), int(output_size[1]/64), boolean=True)
@@ -279,13 +287,15 @@ def preprocess_main(data_path, output_path, output_size, model='resnet50', datas
     except:
         pass
 
-    preprocess_and_create_data(data_path, output_path, output_size, preprocess_fn, thresh_scale)
+    preprocess_and_create_3cg_data(data_path, output_path, output_size, preprocess_fn, thresh_scale)
 
 
 def connected_components(image, min_size: int):
     '''
+    Grabs and returns the connected coponents
     needs image to be of size [channel, h, w]
     :param image:
+    :param min_size: minimum size an object has to be considered a component
     :return:
     '''
     if image.size()[0] == 1:
@@ -312,7 +322,15 @@ def connected_components(image, min_size: int):
 
 
 def random_pixel_data(data_path: str, output_path: str, output_size: tuple, min_size: int, preprocess):
-
+    '''
+    creates data in similar format to 3cg but only a single pixel is colored from the largest component in each channel
+    :param data_path:
+    :param output_path:
+    :param output_size:
+    :param min_size:
+    :param preprocess:
+    :return: nothing but creates new dataset
+    '''
     resizer = transforms.Resize(size=output_size[1:])
     for filename in tqdm(os.listdir(data_path)):
         org_img = torch.load(data_path+filename)
@@ -339,22 +357,10 @@ def random_pixel_data(data_path: str, output_path: str, output_size: tuple, min_
     print('~Finished!~')
 
 
-def test_images(path, img_name='F030.pt', output_path='testest.png'):
-    _, ax = plt.subplots(1,2)
-
-    train = torch.load(path + 'train/' + img_name)
-    train = torch.stack([normalize_array_t(i) for i in train], -1).numpy()
-    ax[0].imshow(train)
-    truth = torch.load(path + 'truth/' + img_name)
-    truth = torch.stack([i for i in truth], -1).numpy()
-    ax[1].imshow(truth)
-
-    plt.savefig(output_path)
-
-
 def remove_outliers(img):
+    # remove outliers in an image
     top = np.quantile(img, .99)
-    img = np.where(img<top, img, 0)
+    img = np.where(img < top, img, 0)
     return img
 
 
@@ -373,6 +379,14 @@ def save_image(image, output_path):
 
 
 def channel_transform(data_path_train, data_path_truth, new_data_path, num_channels):
+    '''
+    create new dataset but with channels randomly permutated
+    :param data_path_train: path to org train data
+    :param data_path_truth: path to org truth data
+    :param new_data_path: path to new data
+    :param num_channels: number of channels in old data
+    :return: none, makes new dataset
+    '''
     try:
         print('Creating output paths')
         os.mkdir(new_data_path[:-1])
@@ -396,7 +410,14 @@ def channel_transform(data_path_train, data_path_truth, new_data_path, num_chann
             torch.save(clone[permutations[i], :, :], new_data_path + 'truth/' + perm_name[i] + filename)
 
 
-def kaggle_als_renamer(path, output_path, output_path_j):
+def kaggle_hpa_renamer(path, output_path, metadata_path):
+    '''
+    Code to edit the hpa files from kaggle to be smaller and easily hashable
+    :param path: path of the data
+    :param output_path: output path
+    :param metadata_path: metadata path
+    :return: metadata
+    '''
     name_to_id = dict()
     id_to_numbers = dict()
     id_to_name = dict()
@@ -419,7 +440,7 @@ def kaggle_als_renamer(path, output_path, output_path_j):
     json_dict = {'name_to_id':name_to_id,
                  'id_to_name':id_to_name,
                  'id_to_numbers':id_to_numbers}
-    with open(output_path_j, "w") as outfile:
+    with open(metadata_path, "w") as outfile:
         json.dump(json_dict, outfile)
     return json_dict
 
@@ -440,16 +461,6 @@ def remove_points(points, sample_space):
     new_sample_space = np.array([[point[0], point[1]] for point in sample_space if checker(point,points)])
     return new_sample_space
 
-# def generate_x_y(points, sample_space):
-#     # generate points for top left of image to be inserted
-#     # makes sure there's no overlap of more than 1/4th of an image
-#     if not points:
-#         x, y = sample_space[np.random.choice(sample_space.shape[0], 1)][0]
-#         return x, y, sample_space
-#     sample_space = remove_points(sample_space, points)
-#     x,y  = sample_space[np.random.choice(sample_space.shape[0], 1)][0]
-#     return x, y, sample_space
-
 
 def generate_x_y(mask):
     # mask should be 900x900
@@ -460,8 +471,17 @@ def generate_x_y(mask):
     return x, y, mask
 
 
-def create_synthetic_dataset_als(path_bodies, path_outlines, metadata, max_images=20000, cells_per_chan=4, image_shape=(3, 1024, 1024)):
-
+def create_synthetic_dataset_hpa(path_bodies, path_outlines, metadata, max_images=20000, cells_per_chan=4, image_shape=(3, 1024, 1024)):
+    '''
+    create a custom dataset using singular images of cells outlines and cell bodies
+    :param path_bodies:
+    :param path_outlines:
+    :param metadata:
+    :param max_images:
+    :param cells_per_chan:
+    :param image_shape:
+    :return:
+    '''
     start_time = time.time()
     id_to_numbers = metadata['id_to_numbers']
     keys, lengths = [], []
@@ -470,6 +490,7 @@ def create_synthetic_dataset_als(path_bodies, path_outlines, metadata, max_image
         lengths.append(len(val))
     lengths = np.array(lengths) / sum(lengths)
     num_images = 0
+    # until we reach desired number of images
     while num_images < max_images:
         temp_bodies = torch.zeros(image_shape)
         points_image = []
@@ -482,17 +503,17 @@ def create_synthetic_dataset_als(path_bodies, path_outlines, metadata, max_image
             points = []
             chan_mask = torch.ones((image_shape[1]-256, image_shape[1]-256))
             print(chan_mask.shape)
-
+            # insert cells_per_chan number of cells
             for i in range(cells_per_chan):
                 empty = torch.zeros(image_shape[1:])
-                # x, y, sample_space = generate_x_y(points,sample_space)
                 x, y, chan_mask = generate_x_y(chan_mask)
                 img = torch.load(path_bodies+keys_paths[i])
-                points.append([x,y])
-                empty[x:min(x+256,1023), y:min(y+256,1023)] = normalize_array_t(
-                    img[:min(1023-x, 256),:min(1023-y, 256)])
-                chan = torch.maximum(chan,empty)
-            temp_bodies[channel,:,:] = chan
+                points.append([x, y])
+                empty[x:min(x+256, 1023), y:min(y+256, 1023)] = normalize_array_t(
+                    img[:min(1023-x, 256), :min(1023-y, 256)])
+                # to grab all values > 0 without having to add leading to overflow
+                chan = torch.maximum(chan, empty)
+            temp_bodies[channel, :, :] = chan
             points_image.append(points)
             keys_image.append(keys_paths)
 
@@ -508,11 +529,12 @@ def create_synthetic_dataset_als(path_bodies, path_outlines, metadata, max_image
                 img = torch.load(path_outlines + keys_i[i])
                 empty[x:min(x + 256, 1023), y:min(y + 256, 1023)] = normalize_array_t(
                     img[:min(1023 - x, 256), :min(1023 - y, 256)])
+                # to grab all values > 0 without having to add leading to overflow
                 chan = torch.maximum(chan, empty)
             temp_outlines[channel,:,:] = chan
         grayscale = torch.mean(temp_outlines, dim=0)
         training = torch.zeros_like(temp_outlines)
-        training[0,:, :, ] = training[1,:, :, ] = training[2,:, :] = grayscale
+        training[0, :, :, ] = training[1, :, :, ] = training[2, :, :] = grayscale
         training = torch.maximum(training, temp_bodies)
         ground_truth = torch.maximum(temp_outlines, temp_bodies)
         # num_images += 1
@@ -520,13 +542,10 @@ def create_synthetic_dataset_als(path_bodies, path_outlines, metadata, max_image
     print(time.time() - start_time)
     ground_truth = make_plotable(ground_truth)
     training = make_plotable(training)
-    fig, ax = plt.subplots(1,2)
-    ax[0].imshow(ground_truth)
-    ax[1].imshow(training)
-    plt.show()
 
 
 def np_to_torch_img(img):
+    # convert np array to torch
     new_img = np.stack([img[:,:,i] for i in range(img.shape[2])])
     img_t = torch.from_numpy(new_img)
     return img_t
@@ -538,13 +557,14 @@ def hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, n
     This function will use these three types of images to make training data, on given pathes
     Train -> cell nuclei will be colored in, everything else grayscale
     Truth -> cell nuclei not colored, everything else colored
-    :param cell_path: 
-    :param nuclei_path: 
-    :param org_path:
-    :param new_train:
-    :param new_truth:
-    :param img_size: 
-    :return: none
+    :param cell_path: path to cell outlines
+    :param nuclei_path: path to cell bodies
+    :param org_path: path to the original images
+    :param metadata_path: path to metadata
+    :param new_train_path: new path for training images
+    :param new_truth_path: new path for truth images
+    :param img_size: image sizes for output
+    :return: none, create data images
     '''
     # metadata will contain {file->{regions->colors}}
     metadata = {}
@@ -615,8 +635,15 @@ if __name__ == '__main__':
     metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
     img_size = (512, 512, 3)
     # hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path, img_size=img_size)
-
-
+    np_img = imread('unet.png')
+    print(np_img.shape)
+    img = np_to_torch_img(np_img)
+    x, y = color_blobs(img)
+    fig, axs = plt.subplots(1, 2)
+    axs[0].imshow(np_img)
+    y = make_plotable(y)
+    axs[1].imshow(y)
+    plt.show()
 
 
 
