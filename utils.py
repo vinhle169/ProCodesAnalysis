@@ -554,11 +554,11 @@ def np_to_torch_img(img):
 def hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path, img_size=(2048, 2048, 3)):
     '''
     Given 3 paths, cell path and nuclei path leading to segmentation masks for original images
-    This function will use these three types of images to make training data, on given pathes
+    This function will use these three types of images to make training data, on given paths
     Train -> cell nuclei will be colored in, everything else grayscale
     Truth -> cell nuclei not colored, everything else colored
     :param cell_path: path to cell outlines
-    :param nuclei_path: path to cell bodies
+    :param nuclei_path: path to cell nuclei
     :param org_path: path to the original images
     :param metadata_path: path to metadata
     :param new_train_path: new path for training images
@@ -569,11 +569,13 @@ def hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, n
     # metadata will contain {file->{regions->colors}}
     metadata = {}
     for filename in tqdm(os.listdir(cell_path)):
+        # grab the unique part of the filename
         fname = filename[:36]
         segmentation_mask_cell_path = cell_path+filename
         segmentation_mask_nuclei_path = nuclei_path+filename
         segmentation_mask_nuclei = np.load(segmentation_mask_nuclei_path)
 
+        # get the corresponding matrix for segmentation masks
         smn = segmentation_mask_nuclei[segmentation_mask_nuclei.files[0]]
         if smn.shape != img_size[:-1]:
             smn = transform.resize(smn, output_shape=img_size[:-1], preserve_range=True).astype(np.int32)
@@ -583,6 +585,7 @@ def hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, n
         if smc.shape != img_size[:-1]:
             smc = transform.resize(smc, output_shape=img_size[:-1], preserve_range=True).astype(np.int32)
 
+        # initialize the array that will be altered to be new test data
         output_img = np.zeros(img_size)
         img_cell = imread(org_path+fname+'_y.png', as_gray=True)
         if img_cell.shape != img_size[:-1]:
