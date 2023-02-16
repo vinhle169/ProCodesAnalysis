@@ -21,18 +21,6 @@ from tqdm import tqdm
 # use networkx greedy coloring to 4-color the graph
 # assign numbers to channels
 
-file = np.load('data/cell_mask_test.npz')
-mask = file['arr_0']
-img = imread('data/test.png')
-
-
-def get_vor_centroids(mask):
-    boundary_centroids = {}
-    for region in regionprops(mask):
-        boundary_centroids[region.label] = np.array(region.centroid).astype('int32')
-
-    centroids = np.array([[x,y] for y,x in boundary_centroids.values()] +[[0,0],[0,2048],[2048,0],[2048,2048]])
-    return centroids
 
 def vor_and_create_graph(centroids):
     vor = Voronoi(centroids)
@@ -66,11 +54,33 @@ def vor_and_create_graph(centroids):
     return graph
 
 
-def graph_color():
+def graph_color(cmi, shape):
+    '''
+    :param cmi: cell mask image
+    :param shape: the image shape
+    :return:
+    '''
+
+    boundary_centroids = {}
+    for region in regionprops(cmi):
+        boundary_centroids[region.label] = np.array(region.centroid).astype('int32')
+
+    centroids = np.array(
+        [[x, y] for y, x in boundary_centroids.values()] + [[0, 0], [0, shape[1]], [shape[0], 0], [shape[0], shape[1]]])
+
+    graph = vor_and_create_graph(centroids)
     coloring = networkx.greedy_color(graph)
-    test = np.zeros((2048, 2048, 3)).astype('int32')
+    test = np.zeros((shape[0], shape[1], 3)).astype('int32')
     for region in regionprops(mask):
-        centroid = np.array(region.centroid).astype('int32')
+        # color_int is the channel the image will be in
+        centroid = boundary_centroids[region.label]
         color_int = coloring[(centroid[1], centroid[0])]
-        color = color_dict[color_int]
-        test[tuple(region.coords.T)] = color
+
+
+# file = np.load('data/cell_mask_test.npz')
+# mask = file['arr_0']
+# img = imread('data/test.png')
+
+if __name__ == '__main__':
+    pass
+    
