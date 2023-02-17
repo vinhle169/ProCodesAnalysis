@@ -6,12 +6,13 @@ from skimage import io, color, segmentation
 from scipy.spatial import Voronoi, voronoi_plot_2d
 from scipy import spatial
 from sklearn.neighbors import KDTree
-
+import torch
 import scipy
 import networkx
 from imageio.v2 import imread
 from skimage.measure import regionprops
 from tqdm import tqdm
+from utils import make_plotable
 
 # what to do:
 # load in cell masks
@@ -70,12 +71,20 @@ def graph_color(cmi, shape):
 
     graph = vor_and_create_graph(centroids)
     coloring = networkx.greedy_color(graph)
-    test = np.zeros((shape[0], shape[1], 3)).astype('int32')
-    for region in regionprops(mask):
+    # channel, height, width
+    test = torch.zeros((4, shape[1], shape[0]))
+    for region in regionprops(cmi):
         # color_int is the channel the image will be in
         centroid = boundary_centroids[region.label]
         color_int = coloring[(centroid[1], centroid[0])]
+        test[color_int][tuple(region.coords.T)] = 1
+    return test
 
+def make_plotable_4chan(img):
+    nonzero_idx = torch.nonzero(img[3])
+    for pair in nonzero_idx:
+        img[(0,)+tuple(pair)], img[(1,)+tuple(pair)], img[(2,)+tuple(pair)] = 1, 1, 1
+    return make_plotable(img[:3,:,:])
 
 # file = np.load('data/cell_mask_test.npz')
 # mask = file['arr_0']
@@ -83,4 +92,13 @@ def graph_color(cmi, shape):
 
 if __name__ == '__main__':
     pass
-    
+    file_path = 'data/cell_mask_test.npz'
+    file = np.load(file_path)
+    mask = file[file.files[0]]
+    colored = graph_color(mask, (2048,2048))
+    colored_plotable = make_plotable_4chan(colored)
+    # colored_plotable = make_plotable(colored)
+    # print(colored_plotable[:,:,:3].shape)
+    plt.imshow(colored_plotable)
+    plt.savefig('colored_plot.png')
+    # needs to be width x height x channel for plot
