@@ -26,8 +26,8 @@ from utils import normalize_array, normalize_array_t
 
 def vor_and_create_graph(centroids, x_max, y_max):
     vor = Voronoi(centroids)
-    voronoi_plot_2d(vor)
-    plt.savefig('vor.png')
+    # voronoi_plot_2d(vor)
+    # plt.savefig('vor.png')
     centroids_to_vertices = {}
     check_valid = lambda x,y: 0<x<=x_max and 0<y<=y_max
     for i in range(len(vor.point_region)):
@@ -52,12 +52,8 @@ def vor_and_create_graph(centroids, x_max, y_max):
             seen.add((k,k1))
             seen.add((k1,k))
             if v.intersection(v1):
-                if k==(328,189) or k1==(328,189):
-                    print(k, k1)
-                    print(v, v1)
                 edges[k].append(k1)
                 edges[k1].append(k)
-    print(edges)
     graph = networkx.from_dict_of_lists(edges)
     return graph
 
@@ -78,20 +74,23 @@ def graph_color(cmi, shape, with_coloring=False):
         [[x, y] for x, y in boundary_centroids.values()] + [[0, 0], [0, shape[1]], [shape[0], 0], [shape[0], shape[1]]])
 
     graph = vor_and_create_graph(centroids, shape[0]-1, shape[1]-1)
-    plt.clf()
-    pos = {i:i for i in graph}
-    networkx.draw_networkx(graph, pos)
-    plt.savefig('graph.png')
-    coloring = networkx.greedy_color(graph, strategy='connected_sequential_bfs')
+    # plt.clf()
+    # pos = {i: i for i in graph}
+    # networkx.draw_networkx(graph, pos)
+    # plt.savefig('graph.png')
+    coloring = networkx.greedy_color(graph, strategy='saturation_largest_first')
+    # print(coloring)
     # channel, height, width
     final_image = torch.zeros((4, shape[0], shape[1]))
-    label_to_color = {}
-    print(coloring)
+    label_to_color = {'miscolors':0}
     for region in regionprops(cmi):
         # color_int is the channel the image will be in
         centroid = boundary_centroids[region.label]
-        label_to_color[region.label] = coloring[(centroid[0], centroid[1])]
         color_int = coloring[(centroid[0], centroid[1])]
+        if color_int > 3:
+            color_int = np.random.choice([0, 1, 2, 3])
+            label_to_color['miscolors'] += 1
+        label_to_color[int(region.label)] = int(color_int)
         final_image[color_int][tuple(region.coords.T)] = 1
     if with_coloring:
         return final_image, label_to_color
@@ -124,9 +123,9 @@ def hpa_kaggle_graph_color(cell_path, nuclei_path, org_path, metadata_path, new_
     '''
     # metadata will contain {file->{regions->colors}}
     metadata = {}
+    miscolors = 0
     aug = Resize((img_size[1], img_size[2]), interpolation=torchvision.transforms.InterpolationMode.NEAREST, antialias=False)
     for filename in tqdm(os.listdir(cell_path)):
-        print(filename)
         # grab the unique part of the filename
         f_name = filename[:36]
         segmentation_mask_cell_path = cell_path+filename
@@ -152,7 +151,9 @@ def hpa_kaggle_graph_color(cell_path, nuclei_path, org_path, metadata_path, new_
         img_cell = torch.stack([img_cell,img_cell,img_cell,img_cell])
 
         # graph color the cells to ensure no adjacent cells are the same color
+
         colored, coloring = graph_color(smc, img_size[1:], with_coloring=True)
+        miscolors += coloring['miscolors']
         metadata[f_name] = coloring
         # multiply the colored in version with the grayscale version to get the right intensities for each pixel
         output_img = torch.mul(colored, img_cell)
@@ -175,6 +176,8 @@ def hpa_kaggle_graph_color(cell_path, nuclei_path, org_path, metadata_path, new_
         torch.save(truth, new_truth_path + f_name + '.pt')
         del train
         del truth
+
+    print(miscolors)
     with open(metadata_path+'metadata.json', 'w') as fp:
         json.dump(metadata, fp)
     return None
@@ -190,8 +193,8 @@ if __name__ == '__main__':
     new_truth_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/truth_gc_256/'
     metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
     img_size = (4, 512, 512)
-    # hpa_kaggle_graph_color(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path,
-    #                           img_size=img_size)
+    hpa_kaggle_graph_color(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path,
+                              img_size=img_size)
     # path = 'data/'
     # trainp = path + 'train_test_hpa.pt'
     # truthp = path + 'truth_test_hpa.pt'
@@ -220,16 +223,19 @@ if __name__ == '__main__':
     # print(colored_plotable[:,:,:3].shape)
     # plt.imshow(colored_plotable)
     # plt.savefig('colored_plot.png')
-    segmentation_mask_cell_path = 'data/wrong.npz'
-    aug = Resize((img_size[1], img_size[2]), interpolation=torchvision.transforms.InterpolationMode.NEAREST,
-                 antialias=False)
-    segmentation_mask_cell = np.load(segmentation_mask_cell_path)
-    smc = segmentation_mask_cell[segmentation_mask_cell.files[0]].astype(np.int32)
-    plt.imshow(smc)
-    plt.show()
-    if smc.shape != img_size[1:]:
-        smc = np.array(aug(torch.from_numpy(smc).view(1, smc.shape[0], smc.shape[1])))[0]
-    colored = graph_color(smc, (512, 512))
-    colored_plotable = make_plotable_4chan(colored)
-    plt.imshow(colored_plotable)
-    plt.show()
+    # segmentation_mask_cell_path = 'data/wrong2.npz'
+    # aug = Resize((img_size[1], img_size[2]), interpolation=torchvision.transforms.InterpolationMode.NEAREST,
+    #              antialias=False)
+    # segmentation_mask_cell = np.load(segmentation_mask_cell_path)
+    # smc = segmentation_mask_cell[segmentation_mask_cell.files[0]].astype(np.int32)
+    # print(smc.max())
+    # if smc.shape != img_size[1:]:
+    #     smc = np.array(aug(torch.from_numpy(smc).view(1, smc.shape[0], smc.shape[1])))[0]
+    # print(smc.max())
+    # plt.imshow(smc)
+    # plt.gca().invert_yaxis()
+    # plt.show()
+    # colored = graph_color(smc, (512, 512))
+    # colored_plotable = make_plotable_4chan(colored)
+    # plt.imshow(colored_plotable)
+    # plt.show()
