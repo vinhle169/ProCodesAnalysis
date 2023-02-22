@@ -73,7 +73,7 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
     seed_everything(22, workers=True)
 
     # Initialize model, and load in checkpoint if necessary
-    unet, _ = create_pretrained('resnet34', None)
+    unet, _ = create_pretrained('resnet34', None, in_channels=4, classes=4)
     if checkpoint_location:
         unet_pl = UnetLightning.load_from_checkpoint("/path/to/checkpoint.ckpt")
     else:
@@ -92,7 +92,7 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
         save_on_train_epoch_end=True,
         dirpath=model_path,
         auto_insert_metric_name=False,
-        filename="UNET-hpa-{epoch:04d}",
+        filename="UNET_hpa_gc_{epoch:04d}",
     )
     # Set up the trainer function and begin training
     trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback],

@@ -44,8 +44,8 @@ class ProCodes(torch.utils.data.Dataset):
         inp = inp.clone().detach().type(torch.float)
         mask = mask.clone().detach().type(torch.float)
         size = inp.size()[1]
-        inp = inp.view((3, size, size))
-        mask = mask.view((3, size, size))
+        inp = inp.view((4, size, size))
+        mask = mask.view((4, size, size))
         # return inp, mask, zero_mask
         return inp, mask
 

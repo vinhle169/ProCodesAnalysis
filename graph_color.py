@@ -189,8 +189,8 @@ if __name__ == '__main__':
     nuclei_path = '/nobackup/users/vinhle/data/hpa_data/hpa_nuclei_mask/'
     org_path = '/nobackup/users/vinhle/data/hpa_data/hpa_original/'
     org_path2 = '/nobackup/users/vinhle/data/hpa_data/hpa_original_test/'
-    new_train_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/train_gc_256/'
-    new_truth_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/truth_gc_256/'
+    new_train_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/train_gc_512/'
+    new_truth_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/truth_gc_512/'
     metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
     img_size = (4, 512, 512)
     hpa_kaggle_graph_color(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path,

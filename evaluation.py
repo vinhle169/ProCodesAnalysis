@@ -9,7 +9,9 @@ from collections import Counter
 from skimage.metrics import structural_similarity as ssim
 from unet_lightning import UnetLightning
 from pytorch_lightning import Trainer, seed_everything
-
+from graph_color import make_plotable_4chan
+from torchvision.transforms import Resize
+import torchvision
 
 def elementwise_accuracy(img_1, img_2, ignore_zeros=False, deviation=0.001):
     '''
@@ -276,27 +278,30 @@ def plot_different_outputs_HPA(filenames: list, checkpoint_path: str, data_path:
     :param dimensions: dimensions of the images, [width, height]
     :return:
     '''
-    u, _ = create_pretrained('resnet34', None)
+    u, _ = create_pretrained('resnet34', None, in_channels=4, classes=4)
     model = UnetLightning(u)
     checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
-    dims = (1, 3) + dimensions
+    dims = (1, 4) + dimensions
     results = []
     loss_fn = nn.MSELoss(reduction='mean')
     for file in tqdm(filenames):
-        x = torch.load(f'{data_path}train/{file}')
-        y = torch.load(f'{data_path}truth/{file}')
+        x = torch.load(f'{data_path}train_gc_512/{file}')
+        y = torch.load(f'{data_path}truth_gc_512/{file}')
         x = x.clone().detach().type(torch.float)
         y = y.clone().detach().type(torch.float)
         y = y.view(dims)
         x = x.view(dims)
         y_hat = model.predict(x)
         loss = loss_fn(y_hat, y)
-        x = make_plotable(x[0])
-        y_hat = make_plotable(y_hat[0])
-        y = make_plotable(y[0])
+        print(y_hat.shape, y.shape)
+        break
+        x = make_plotable_4chan(x[0], train=True)
+        y_hat = make_plotable_4chan(y_hat[0])
+        y = make_plotable_4chan(y[0])
         results.append([x, y_hat, y, loss, file])
+
 
     results.sort(key=lambda x: x[3])
     fig, ax = plt.subplots(len(filenames), 3, figsize=(25, 20))
@@ -338,24 +343,24 @@ def hpa_classification_accuracy(test_files: list, checkpoint_path: str, test_pat
             return 0
     v_color = np.vectorize(mapping_function)
 
-    u, _ = create_pretrained('resnet34', None)
+    u, _ = create_pretrained('resnet34', None, in_channels=4, classes=4)
     model = UnetLightning(u)
     checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
     accuracies = []
+    aug = Resize(dimensions, interpolation=torchvision.transforms.InterpolationMode.NEAREST,
+                 antialias=False)
     for test_f in tqdm(test_files):
-        x = torch.load(f'{test_path}{test_f}.pt')
+        x = torch.load(f'{test_path}train_gc_512/{test_f}')
         x = x.clone().detach().type(torch.float)
-        x = x.view((1,3) + dimensions)
+        x = x.view((1,4) + dimensions)
         y_hat = model.predict(x)
 
 
-        colored_mask = np.load(cell_seg_path+test_f+'.npz')
-        c_mask = colored_mask[colored_mask.files[0]]
-        c_mask = transform.resize(c_mask, output_shape=dimensions, preserve_range=True).astype(np.int32)
-        mask_over_zero = torch.from_numpy(c_mask > 0)
-        color_mask = torch.from_numpy(v_color(c_mask, test_f))
+        colored_mask = torch.load(f'{test_path}truth_gc_512/{test_f}')
+        mask_over_zero = colored_mask > 0
+        color_mask = colored_mask.max(axis=1, keepdim=True).indices + 1
 
         y_hat = y_hat.max(axis=1, keepdim=True).indices + 1
         acc = y_hat == color_mask
@@ -392,7 +397,7 @@ if __name__ == '__main__':
     #     'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0'
     #     ]
     data_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
-    checkpoint = "models/unet/UNET-hpa-0064.ckpt"
+    checkpoint = "models/unet/UNET_hpa_gc_0019.ckpt"
     cell_path = '/nobackup/users/vinhle/data/hpa_data/hpa_cell_mask/'
     metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/metadata.json'
     plot_different_outputs_HPA(filenames, checkpoint, data_path)
