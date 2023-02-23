@@ -58,20 +58,6 @@ def random_channel(image):
         im = np.delete(image.copy(), channel_i, 0)
     return image[channel_i, :, :], im, channel_i
 
-
-def load_tif(path):
-    img = volread(path)
-    img = img.astype(np.float32) / img.max((-1, -2), keepdims=True)
-    return img
-
-
-def load_codebook(path, values=True):
-    codebook = pd.read_csv(path, sep='.', index_col=0)
-    if values:
-        codebook = codebook.values.copy().T
-    return codebook
-
-
 def normalize_array_t(array):
     return (array - torch.min(array)) / (torch.max(array) - torch.min(array))
 
@@ -80,12 +66,6 @@ def normalize_array(array):
 
     denom = np.max(array) - np.min(array)
     return (array - np.min(array)) / denom
-
-
-def display_codebook(path):
-    codebook = pd.read_csv(path, sep='.', index_col=0)
-    sns.heatmap(codebook)
-    plt.show()
 
 
 def fixed_blobs(img_shape, v_stride: int, w_stride: int, blob_len: int, v_padding: int = 0,
@@ -176,45 +156,6 @@ def plot_loss(train_losses, title, savefig=False):
     if savefig:
         plt.savefig("Loss Graph.png")
     return None
-
-
-# approximately solve min_z ||zA-x||^2_2 st ||z||_0 <= max_iters
-def matching_pursuit(x, A, max_iters, thr=1):
-    '''
-    :param x: Image
-    :param A: codebook values transposed
-    :param max_iters: number of iterations aka the number of components
-    :param thr: scaling factor to otsu threshold
-    :return z: deconvolution of the image
-    '''
-    # this is necessary if doing more than one iteration, for the residuals update to work
-    A = A / np.linalg.norm(A, axis=1)[:, None]
-    z = np.zeros((A.shape[0], *x.shape[1:]))
-    x = x.copy()  # initialize "residuals" to the image itself
-
-    # mask for whether each pixel has converged or not; we already know background's zero
-    active_set = np.ones(x.shape[1:], dtype=bool)
-    x_norm = np.linalg.norm(x, axis=0, ord=2)
-
-    # pick it using the otsu threshold, as estimate of noise level
-    max_norm = threshold_otsu(x_norm)
-    max_norm *= thr  # hack; otsu just not great. see 'enhance neurites' in CellProfiler?
-    active_set[x_norm < max_norm] = False
-
-    for t in range(max_iters):
-        # project dictionary on residual image
-        Ax = A @ x[:, active_set]
-        # pick index with max projection
-        k_max = Ax.argmax(0)
-        # set it to active
-        z[k_max, active_set] = Ax[k_max, range(len(k_max))]
-        # subtract off contribution
-        x[:, active_set] -= A[k_max].T * z[k_max, active_set]
-        # mark pixels with sufficiently small residual norm as done
-        x_norm = np.linalg.norm(x, axis=0, ord=2)
-        active_set[x_norm < max_norm] &= False
-
-    return z
 
 
 def three_channel_grayscale(img, mask=None):
@@ -638,15 +579,17 @@ if __name__ == '__main__':
     metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
     img_size = (512, 512, 3)
     # hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path, img_size=img_size)
-    np_img = imread('unet.png')
-    print(np_img.shape)
-    img = np_to_torch_img(np_img)
-    x, y = color_blobs(img)
-    fig, axs = plt.subplots(1, 2)
-    axs[0].imshow(np_img)
-    y = make_plotable(y)
-    axs[1].imshow(y)
-    plt.show()
+    # np_img = imread('unet.png')
+    # print(np_img.shape)
+    # img = np_to_torch_img(np_img)
+    # x, y = color_blobs(img)
+    # fig, axs = plt.subplots(1, 2)
+    # axs[0].imshow(np_img)
+    # y = make_plotable(y)
+    # axs[1].imshow(y)
+    # plt.show()
+    f05 = display_codebook('results/codebook.csv')
+    # print(f05)
 
 
 

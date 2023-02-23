@@ -97,9 +97,17 @@ def graph_color(cmi, shape, with_coloring=False):
     return final_image
 
 def make_plotable_4chan(img, train=False):
+    '''
+    function to make a 4 channeled image plotable as RGB image
+    :param img: torch tensor image, in shape 4 x M x N
+    :param train: whether or not it is a training image
+    :return:
+    '''
+    # this line to prevent
+    img = img.clone()
     if train:
         return make_plotable(img[:3])
-    nonzero_idx = torch.nonzero(img[3])
+    nonzero_idx = torch.nonzero(img[3] > 0.01)
     for pair in nonzero_idx:
         org_val = img[(3,)+tuple(pair)]
         img[(0,)+tuple(pair)], img[(1,)+tuple(pair)], img[(2,)+tuple(pair)] = org_val, org_val, org_val
@@ -192,9 +200,9 @@ if __name__ == '__main__':
     new_train_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/train_gc_512/'
     new_truth_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/truth_gc_512/'
     metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
-    img_size = (4, 512, 512)
-    hpa_kaggle_graph_color(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path,
-                              img_size=img_size)
+    # img_size = (4, 512, 512)
+    # hpa_kaggle_graph_color(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path,
+    #                           img_size=img_size)
     # path = 'data/'
     # trainp = path + 'train_test_hpa.pt'
     # truthp = path + 'truth_test_hpa.pt'
@@ -239,3 +247,14 @@ if __name__ == '__main__':
     # colored_plotable = make_plotable_4chan(colored)
     # plt.imshow(colored_plotable)
     # plt.show()
+    x = torch.load('results/train_512.pt')
+    x = make_plotable_4chan(x, train=True)
+    plt.imshow(x)
+    plt.show()
+    plt.clf()
+    x = torch.load('results/truth_512.pt')
+    x = make_plotable_4chan(x)
+    plt.imshow(x)
+    plt.show()
+
+

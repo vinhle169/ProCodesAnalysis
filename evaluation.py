@@ -295,16 +295,15 @@ def plot_different_outputs_HPA(filenames: list, checkpoint_path: str, data_path:
         x = x.view(dims)
         y_hat = model.predict(x)
         loss = loss_fn(y_hat, y)
-        print(y_hat.shape, y.shape)
-        break
         x = make_plotable_4chan(x[0], train=True)
         y_hat = make_plotable_4chan(y_hat[0])
         y = make_plotable_4chan(y[0])
         results.append([x, y_hat, y, loss, file])
 
 
+
     results.sort(key=lambda x: x[3])
-    fig, ax = plt.subplots(len(filenames), 3, figsize=(25, 20))
+    fig, ax = plt.subplots(len(filenames), 3, figsize=(15, 22))
 
     for i in tqdm(range(len(filenames))):
         for j in range(3):
@@ -319,8 +318,7 @@ def plot_different_outputs_HPA(filenames: list, checkpoint_path: str, data_path:
     for i, a in enumerate(ax.flatten()[:3]):
         a.set_title(f'{column_titles[i]}', fontsize=20)
     fig.suptitle('Results, Sorted By Loss', fontsize=24)
-
-    fig.subplots_adjust(top=0.92, wspace=0.05, hspace=0.20, left=0.200, right=0.800)
+    fig.subplots_adjust(top=0.92, wspace=0.05, hspace=0.20, left=0.100, right=0.900)
     plt.savefig(f'{plot_name}.png')
 
 
@@ -373,15 +371,12 @@ def hpa_classification_accuracy(test_files: list, checkpoint_path: str, test_pat
 
 if __name__ == '__main__':
     filenames = [
-        '79e74f26-bbc9-11e8-b2bc-ac1f6b6435d0.pt',
         '63b92796-bbb1-11e8-b2ba-ac1f6b6435d0.pt',
         'c4e26ac2-bbc6-11e8-b2bc-ac1f6b6435d0.pt',
         '801d7256-bba8-11e8-b2ba-ac1f6b6435d0.pt',
         '6a5d50c6-bbad-11e8-b2ba-ac1f6b6435d0.pt',
-        '21dc6a76-bbbc-11e8-b2ba-ac1f6b6435d0.pt',
         'a8ae3280-bba5-11e8-b2ba-ac1f6b6435d0.pt',
         '4b0fe352-bbbf-11e8-b2ba-ac1f6b6435d0.pt',
-        '6e0e22ce-bbb0-11e8-b2ba-ac1f6b6435d0.pt',
         'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0.pt'
         ]
     # filenames = [
