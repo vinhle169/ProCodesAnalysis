@@ -3,7 +3,7 @@ from imageio.v2 import volread
 import seaborn as sns
 import numpy as np
 from skimage.filters import threshold_otsu
-
+import matplotlib.pyplot as plt
 
 def load_tif(path):
     img = volread(path)
@@ -61,3 +61,25 @@ def matching_pursuit(x, A, max_iters, thr=1):
         active_set[x_norm < max_norm] &= False
 
     return z
+
+
+if __name__ == '__main__':
+    img = volread('data/F05.tif')
+    # img = np.amax(img, axis=0)
+    img = img[0]
+    img = img.astype(np.float32) / img.max((1, 2), keepdims=True)  # equalize channels, so it better matches our assumptions on codebook
+    print(img.shape)
+    markers = pd.read_csv('markers.csv')[:24]
+    codebook = pd.read_csv('codebook.csv', sep='.', index_col=0)
+    img = img[markers['marker_name'].isin(codebook.index)]
+    A = codebook.values.copy().T
+    x = img.copy()
+    max_components = 3
+    fudge_factor = 0.8
+    z = matching_pursuit(x, A, max_components, fudge_factor)
+
+    cm = plt.get_cmap('tab20').copy()
+    cm.set_bad('k')
+    plt.figure(figsize=(12, 12))
+    plt.gca().matshow(np.where(z.max(0) == 0, np.nan, z.argmax(0)), cmap=cm)
+    plt.savefig('tif.png')
