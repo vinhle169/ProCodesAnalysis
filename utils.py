@@ -158,15 +158,26 @@ def plot_loss(train_losses, title, savefig=False):
     return None
 
 
-def three_channel_grayscale(img, mask=None):
+def three_channel_grayscale(img, mask=None, numpy_like=True):
+    '''
+    :param img:
+    :param mask:
+    :return:
+    '''
     if not mask:
         mask = np.ones(img.shape)
     assert img.size() == mask.size()
     # get grayscale values
-    grayscale = img.mean(2)
+    if numpy_like:
+        grayscale = img.mean(2)
+    else:
+        grayscale = img.mean(0)
     input_img = torch.zeros_like(img)
     # place the grayscale values in each channel
-    input_img[:, :, 0] = input_img[:, :, 1] = input_img[:, :, 2] = grayscale
+    if numpy_like:
+        input_img[:, :, 0] = input_img[:, :, 1] = input_img[:, :, 2] = grayscale
+    else:
+        input_img[0,:, :] = input_img[0, :, :] = input_img[0, :, :] = grayscale
     # mask to place color where it should be colored
     input_img[mask] = img[mask]
     return input_img
@@ -305,8 +316,9 @@ def remove_outliers(img):
     return img
 
 
-def make_plotable(img, remove=False):
-    img = img.detach().cpu().numpy()
+def make_plotable(img, remove=False, numpy_like=False):
+    if not numpy_like:
+        img = img.detach().cpu().numpy()
     if remove:
         img = remove_outliers(img)
     img = np.stack([normalize_array(i) for i in img], -1)

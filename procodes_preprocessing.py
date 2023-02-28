@@ -1,9 +1,16 @@
+import torch
 import pandas as pd
 from imageio.v2 import volread
 import seaborn as sns
 import numpy as np
 from skimage.filters import threshold_otsu
 import matplotlib.pyplot as plt
+from tqdm import tqdm
+from matplotlib.colors import ListedColormap
+from skimage.measure import label, regionprops
+from skimage.morphology import opening, closing, remove_small_objects
+import matplotlib.ticker as ticker
+from utils import make_plotable
 
 def load_tif(path):
     img = volread(path)
@@ -22,6 +29,44 @@ def display_codebook(path):
     codebook = pd.read_csv(path, sep='.', index_col=0)
     sns.heatmap(codebook)
     plt.show()
+
+
+def prepare_mp_input(img, codebook, markers):
+    '''
+    :param img:
+    :param codebook:
+    :param markers:
+    :return:
+    '''
+    if img.dtype != np.float32:
+        img = img.astype(np.float32)
+
+    if img.shape[0] != len(markers.index.tolist()):
+        img = img.transpose(1, 0, 2, 3)
+    assert img.shape[0] == len(markers.index.tolist()), 'image input should be transposed to CZYX'
+
+    ## Background Subtraction ## ALL CHANNELS except DNA channels
+    for ch in range(4, img.shape[0]):
+        r = ch % 4
+        if r == 1:  # 488 channel # green
+            img[ch, ...] = img[ch, ...] - img[1, ...]  # subtract background
+
+        elif r == 2:  # 555 channel # yellow
+            img[ch, ...] = img[ch, ...] - img[2, ...]  # subtract background
+
+        elif r == 3:  # 637 channel # red
+            img[ch, ...] = img[ch, ...] - img[3, ...]  # subtract background
+
+        img[img < 0] = 0  # clip negatives
+
+    img = img[markers['marker_name'].isin(codebook.index)]
+
+    # calculate normalization factors
+    img_min = np.quantile(img, 0.75, (1, 2, 3), keepdims=True)  # most of each channel is probably background
+    img_max = np.quantile(img, 0.999, (1, 2, 3), keepdims=True)
+    img = (img.astype(np.float32) - img_min) / (img_max - img_min)
+    img = img.clip(0, 1)  # clip negatives
+    return img
 
 
 # approximately solve min_z ||zA-x||^2_2 st ||z||_0 <= max_iters
@@ -45,9 +90,9 @@ def matching_pursuit(x, A, max_iters, thr=1):
     # pick it using the otsu threshold, as estimate of noise level
     max_norm = threshold_otsu(x_norm)
     max_norm *= thr  # hack; otsu just not great. see 'enhance neurites' in CellProfiler?
-    active_set[x_norm < max_norm] = False
+    active_set[x_norm <= max_norm] = False
 
-    for t in range(max_iters):
+    for t in tqdm(range(max_iters)):
         # project dictionary on residual image
         Ax = A @ x[:, active_set]
         # pick index with max projection
@@ -63,23 +108,110 @@ def matching_pursuit(x, A, max_iters, thr=1):
     return z
 
 
-if __name__ == '__main__':
-    img = volread('data/F05.tif')
-    # img = np.amax(img, axis=0)
-    img = img[0]
-    img = img.astype(np.float32) / img.max((1, 2), keepdims=True)  # equalize channels, so it better matches our assumptions on codebook
-    print(img.shape)
-    markers = pd.read_csv('markers.csv')[:24]
-    codebook = pd.read_csv('codebook.csv', sep='.', index_col=0)
-    img = img[markers['marker_name'].isin(codebook.index)]
-    A = codebook.values.copy().T
-    x = img.copy()
-    max_components = 3
-    fudge_factor = 0.8
-    z = matching_pursuit(x, A, max_components, fudge_factor)
+def prepare_grayscale_mask(img, footprint_size=(12, 12)):
+    '''
+    :param img:
+    :param footprint_size:
+    :return:
+    '''
+    im = img.copy()
+    img_channels = []
+    footprint = np.ones(footprint_size)
+    for img_chan in tqdm(im):
+        area_closed = closing(img_chan, footprint)
+        opened = opening(area_closed, footprint)
+        img_chan[img_chan == 0] = np.nan
+        opened = np.where(opened > np.nanquantile(img_chan, 0.90), 1, 0)
+        opened_label = label(opened, connectivity=2)
+        img_channels.append(opened_label > 0)
+    return np.stack(img_channels, axis=0)
 
-    cm = plt.get_cmap('tab20').copy()
-    cm.set_bad('k')
-    plt.figure(figsize=(12, 12))
-    plt.gca().matshow(np.where(z.max(0) == 0, np.nan, z.argmax(0)), cmap=cm)
-    plt.savefig('tif.png')
+
+
+def make_grayscale(img, footprint_size=(12, 12)):
+    img_maxed = img.max(axis=1)
+    del img
+    masks = prepare_grayscale_mask(img_maxed, footprint_size=footprint_size)
+    assert img_maxed.shape == masks.shape, "Shape of Z-Flattened Image must match Stack of Masks"
+    # get grayscale values
+    # img_maxed = torch.from_numpy(img_maxed)
+    grayscale = img_maxed.mean(0)
+    input_img = np.zeros_like(img_maxed)
+    # place the grayscale values in each channel
+    for i in tqdm(range(img_maxed.shape[0])):
+        # mask_i = masks[i]
+        # img_i = img_maxed[i]
+        input_img[i,:,:] = grayscale
+
+    # mask to place color where it should be colored
+    input_img[masks] = img_maxed[masks]
+    return input_img
+
+
+if __name__ == '__main__':
+    # img = volread('data/F05.tif')
+    # codebook = pd.read_csv('codebook.csv',sep='.',index_col=0)
+    # markers = pd.read_csv('markers.csv')
+    # idx = codebook.index.tolist()
+    # idx.pop(2)
+    # codebook = codebook.reindex(idx + ['FLAG'])
+    # # grab the correct rows
+    # codebook = codebook[['A2', 'AA5', 'D4']]
+    # x = prepare_mp_input(img, codebook, markers)
+    # np.save('prepped_F05',x)
+    f = np.load('prepped_F05.npy')
+
+    f_test = f.max(axis=1)[1:4]
+    f_test = make_plotable(f_test, numpy_like=True)
+    f1 = make_grayscale(f, footprint_size=(12,12))
+    f1_test = f1[1:4]
+    f1_test = make_plotable(f1_test, numpy_like=True)
+    fig, ax = plt.subplots(1,2)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    ax[0].imshow(f_test)
+    ax[1].imshow(f1_test)
+    ax[0].axis('off')
+    ax[1].axis('off')
+    plt.savefig('test_data.png')
+    plt.clf()
+
+    # print(f.shape)
+    # f1max = f[1].max(0)
+    # print(f1max.shape)
+    # fig, ax = plt.subplots(1,3)
+    # fig.set_figheight(15)
+    # fig.set_figwidth(20)
+    # ax[0].matshow(f1max)
+    # opened = f1max
+    # footprint = np.ones((12, 12))
+    # area_closed = closing(opened, footprint)
+    # footprint = np.ones((12, 12))
+    # opened = opening(area_closed, footprint)
+    # f1max[f1max==0] = np.nan
+    # opened = np.where(opened > np.nanquantile(f1max, 0.90), 1, 0)
+    # ax[1].matshow(opened)
+    #
+    # opened_label, num = label(opened, return_num=True, connectivity=2)
+    # opened_label = remove_small_objects(opened_label)
+    # ax[2].matshow(opened_label)
+    # plt.show()
+    # plt.tight_layout()
+    # plt.savefig("test.png", bbox_inches='tight')
+
+    # A = codebook.values.copy().T
+    # print(x.shape)
+    # print(A.shape)
+    # max_components = 3  # assuming maximum of three overlapping neurites..
+    # fudge_factor = 0.25
+    #
+    # # run MP
+    # z = matching_pursuit(x, A, max_components, fudge_factor)
+    # z = z.clip(0, np.inf)
+    # cm = ListedColormap(['red','green','blue'])
+    # cm.set_bad('black')
+    # plt.figure(figsize=(12, 12))
+    # plt.gca().matshow(np.where(z.max(1).max(0) == 0, np.nan, z.max(1).argmax(0)), cmap=cm)
+    # plt.savefig('matching_pursuit_test.png')
+    # 7 channels but each has a unique combination of the 3 channels
+    # with these combinations we can fill in the training data.
