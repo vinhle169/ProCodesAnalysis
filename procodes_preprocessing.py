@@ -1,3 +1,4 @@
+import time
 import torch
 import pandas as pd
 from imageio.v2 import volread
@@ -149,44 +150,53 @@ def make_grayscale(img, footprint_size=(12, 12)):
 
 
 if __name__ == '__main__':
-    # img = volread('data/F05.tif')
+    # start_time = time.time()
+    img = volread('data/F05.tif')
     # codebook = pd.read_csv('codebook.csv',sep='.',index_col=0)
     # markers = pd.read_csv('markers.csv')
     # idx = codebook.index.tolist()
     # idx.pop(2)
     # codebook = codebook.reindex(idx + ['FLAG'])
-    # # grab the correct rows
+    # grab the correct rows
     # codebook = codebook[['A2', 'AA5', 'D4']]
+    # our input to create train data
+    # print('preparing input')
     # x = prepare_mp_input(img, codebook, markers)
+    # print('making grayscale')
     # np.save('prepped_F05',x)
     f = np.load('prepped_F05.npy')
+    nuclear_channel = img.max(0)[0]
+    # train_image = make_grayscale(x, footprint_size=(8,8))
+    # train_image = torch.from_numpy(train_image)
+    # torch.save(train_image, '/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/single.pt')
+    # print(train_image.shape)
 
-    f_test = f.max(axis=1)[1:4]
-    f_test = make_plotable(f_test, numpy_like=True)
-    f1 = make_grayscale(f, footprint_size=(12,12))
-    f1_test = f1[1:4]
-    f1_test = make_plotable(f1_test, numpy_like=True)
-    fig, ax = plt.subplots(1,2)
-    fig.set_figheight(15)
-    fig.set_figwidth(15)
-    ax[0].imshow(f_test)
-    ax[1].imshow(f1_test)
-    ax[0].axis('off')
-    ax[1].axis('off')
-    plt.savefig('test_data.png')
-    plt.clf()
-
-    # print(f.shape)
-    # f1max = f[1].max(0)
-    # print(f1max.shape)
-    # fig, ax = plt.subplots(1,3)
+    # f1_test = f1[1:4]
+    # f1_test = make_plotable(f1_test, numpy_like=True)
+    # fig, ax = plt.subplots(1,2)
     # fig.set_figheight(15)
-    # fig.set_figwidth(20)
-    # ax[0].matshow(f1max)
+    # fig.set_figwidth(15)
+    # ax[0].imshow(f_test)
+    # ax[1].imshow(f1_test)
+    # ax[0].axis('off')
+    # ax[1].axis('off')
+    # plt.savefig('test_data.png')
+    # plt.clf()
+    print(f.shape)
+    for i in range(len(f)):
+        fig,ax = plt.subplots(1,2)
+        fig.set_figheight(15)
+        fig.set_figwidth(15)
+        fmax = f[i].max(0)
+        ax[0].imshow(nuclear_channel, vmin=np.quantile(nuclear_channel, 0.05), vmax=np.quantile(nuclear_channel, 0.95))
+        ax[1].imshow(fmax, vmin=np.quantile(fmax, 0.05), vmax=np.quantile(fmax, 0.95))
+        plt.show()
+        plt.close()
+
     # opened = f1max
-    # footprint = np.ones((12, 12))
+    # footprint = np.ones((8, 8))
     # area_closed = closing(opened, footprint)
-    # footprint = np.ones((12, 12))
+    # footprint = np.ones((8, 8))
     # opened = opening(area_closed, footprint)
     # f1max[f1max==0] = np.nan
     # opened = np.where(opened > np.nanquantile(f1max, 0.90), 1, 0)
@@ -207,7 +217,12 @@ if __name__ == '__main__':
     #
     # # run MP
     # z = matching_pursuit(x, A, max_components, fudge_factor)
-    # z = z.clip(0, np.inf)
+    # z = z.clip(0, 1)
+    # z = z.max(1)
+    # print(z.shape)
+    # z = torch.from_numpy(z)
+    # torch.save(z, '/nobackup/users/vinhle/data/procodes_data/unet_train_single/truth/single.pt')
+    # print('total time: ', time.time() - start_time)
     # cm = ListedColormap(['red','green','blue'])
     # cm.set_bad('black')
     # plt.figure(figsize=(12, 12))

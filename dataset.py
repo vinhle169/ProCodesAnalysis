@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 
 class ProCodes(torch.utils.data.Dataset):
 
-    def __init__(self, paths, transform=None):
+    def __init__(self, paths, image_size, transform=None):
         """
         :param path: path to the folder containing all the files
         :param transform: optional transforms from the imgaug python package
@@ -24,6 +24,7 @@ class ProCodes(torch.utils.data.Dataset):
             "Path to data folder is required"
         super(ProCodes).__init__()
         self.paths = paths
+        self.image_size = image_size
         self.transforms = transform
         print("Done")
 
@@ -41,11 +42,15 @@ class ProCodes(torch.utils.data.Dataset):
         inp, mask = torch.load(inp_path), torch.load(mask_path)
         if self.transforms:
             inp = self.transforms(inp)
+        if self.image_size:
+            padder = transforms.Pad([0,0,self.image_size[-1]-inp.shape[-1], self.image_size[-2]-inp.shape[-2]], padding_mode='edge')
+            inp = padder(inp)
+            mask = padder(mask)
         inp = inp.clone().detach().type(torch.float)
         mask = mask.clone().detach().type(torch.float)
-        size = inp.size()[1]
-        inp = inp.view((4, size, size))
-        mask = mask.view((4, size, size))
+        # size = inp.size()
+        # inp = inp.view((4, size, size))
+        # mask = mask.view((4, size, size))
         # return inp, mask, zero_mask
         return inp, mask
 
@@ -54,7 +59,7 @@ class ProCodes(torch.utils.data.Dataset):
 
 
 class ProCodesDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir, batch_size: int = 1, test_size: float = .3, transform = None):
+    def __init__(self, data_dir, batch_size: int = 1, test_size: float = .3, transform = None, stage=None, image_size=None):
         '''
         :param data_dir:
         :param batch_size:
@@ -71,22 +76,31 @@ class ProCodesDataModule(pl.LightningDataModule):
         self.test_size = test_size
         self.data_dir = data_dir
         self.batch_size = batch_size
+        self.image_size = image_size
         self.items = [[directory + filename for filename in os.listdir(directory)] for directory in self.data_dir]
         assert data_dir is not None, \
             "Path to data folder is required"
-        self.setup()
+        self.setup(stage=stage)
 
     def setup(self, stage: str = None):
-        self.xtrain, self.xtest, self.ytrain, self.ytest = train_test_split(self.items[0], self.items[1], test_size=self.test_size)
-        # want val size == test size
-        self.xval, self.xtest, self.yval, self.ytest = train_test_split(self.xtest, self.ytest, test_size=0.5)
-        print("VAL SET EXAMPLES: ", self.xval[0:10])
-        print("TEST SET EXAMPLES: ", self.xtest[0:10])
+        if len(self.items[0]) == 1:
+            self.xtrain = self.items[0]
+            self.xval = self.items[0]
+            self.ytrain = self.items[1]
+            self.yval = self.items[1]
+            self.xtest = self.items[0]
+            self.ytest = self.items[1]
+        else:
+            self.xtrain, self.xtest, self.ytrain, self.ytest = train_test_split(self.items[0], self.items[1], test_size=self.test_size)
+            # want val size == test size
+            self.xval, self.xtest, self.yval, self.ytest = train_test_split(self.xtest, self.ytest, test_size=0.5)
+            print("VAL SET EXAMPLES: ", self.xval[0:10])
+            print("TEST SET EXAMPLES: ", self.xtest[0:10])
         if stage in (None, "test"):
-            self.test = ProCodes([self.xtest, self.ytest])
+            self.test = ProCodes([self.xtest, self.ytest], image_size=self.image_size)
         if stage in (None, "fit"):
-            self.train = ProCodes([self.xtrain, self.ytrain], transform=self.transform)
-            self.val = ProCodes([self.xval, self.yval], transform=self.transform)
+            self.train = ProCodes([self.xtrain, self.ytrain], image_size=self.image_size, transform=self.transform)
+            self.val = ProCodes([self.xval, self.yval], image_size=self.image_size, transform=self.transform)
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train, batch_size=self.batch_size)

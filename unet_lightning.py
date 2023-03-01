@@ -57,7 +57,7 @@ class UnetLightning(pl.LightningModule):
 
 
 def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int = 1, gpus : int = 0,
-          checkpoint_location: str = None):
+          checkpoint_location: str = None, in_chans = 4, out_chans = 4):
     '''
     Training function for U-Net model
     :param data_paths: list of paths to train and truth folder, where train is first item and truth is second
@@ -73,14 +73,14 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
     seed_everything(22, workers=True)
 
     # Initialize model, and load in checkpoint if necessary
-    unet, _ = create_pretrained('resnet34', None, in_channels=4, classes=4)
+    unet, _ = create_pretrained('resnet34', None, in_channels=in_chans, classes=out_chans)
     if checkpoint_location:
         unet_pl = UnetLightning.load_from_checkpoint("/path/to/checkpoint.ckpt")
     else:
         unet_pl = UnetLightning(unet, learning_rate=0.0001)
     # Initialize data module for loading in data
     z = ProCodesDataModule(data_dir=data_path, batch_size=batch_size,
-                           test_size=0.2)
+                           test_size=0.0, image_size=(2048,2048))
     train_loader = z.train_dataloader()
     val_loader = z.validation_dataloader()
     # Setup logger to track metrics for training over time
@@ -92,7 +92,7 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
         save_on_train_epoch_end=True,
         dirpath=model_path,
         auto_insert_metric_name=False,
-        filename="UNET_hpa_gc_{epoch:04d}",
+        filename="UNET_single_{epoch:04d}",
     )
     # Set up the trainer function and begin training
     trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback],
@@ -117,4 +117,4 @@ if __name__ == '__main__':
     path = [args.train_path, args.label_path]
     gpus = int(args.gpus) if args.gpus else 1
     checkpoint = args.checkpoint if args.checkpoint else None
-    train(path, model_path, epochs, batch_size, gpus, checkpoint)
+    train(path, model_path, epochs, batch_size, gpus, checkpoint, in_chans=7, out_chans=3)

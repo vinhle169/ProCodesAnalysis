@@ -12,6 +12,7 @@ from pytorch_lightning import Trainer, seed_everything
 from graph_color import make_plotable_4chan
 from torchvision.transforms import Resize
 import torchvision
+from dataset import ProCodesDataModule
 
 def elementwise_accuracy(img_1, img_2, ignore_zeros=False, deviation=0.001):
     '''
@@ -369,16 +370,40 @@ def hpa_classification_accuracy(test_files: list, checkpoint_path: str, test_pat
     return np.mean(accs)
 
 
+def single_image_result(in_channels, out_channels, checkpoint_path, paths, image_size=(2048,2048)):
+    u, _ = create_pretrained('resnet34', None, in_channels=in_channels, classes=out_channels)
+    model = UnetLightning(u)
+    checkpoint = torch.load(checkpoint_path)
+    model.load_state_dict(checkpoint['state_dict'])
+    model.eval()
+    dataloader = ProCodesDataModule(paths, test_size=0, image_size=image_size)
+    training = dataloader.train_dataloader()
+    for item in training:
+        x,y = item
+    y_hat = model.predict(x)
+    y = make_plotable(y[0])
+    y_hat = make_plotable(y_hat[0])
+    fig,ax = plt.subplots(1,2)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    ax[0].imshow(y)
+    ax[1].imshow(y_hat)
+    ax[0].set_title('Truth')
+    ax[1].set_title('Pred')
+    plt.savefig('single_test.png')
+
+
+
 if __name__ == '__main__':
-    filenames = [
-        '63b92796-bbb1-11e8-b2ba-ac1f6b6435d0.pt',
-        'c4e26ac2-bbc6-11e8-b2bc-ac1f6b6435d0.pt',
-        '801d7256-bba8-11e8-b2ba-ac1f6b6435d0.pt',
-        '6a5d50c6-bbad-11e8-b2ba-ac1f6b6435d0.pt',
-        'a8ae3280-bba5-11e8-b2ba-ac1f6b6435d0.pt',
-        '4b0fe352-bbbf-11e8-b2ba-ac1f6b6435d0.pt',
-        'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0.pt'
-        ]
+    # filenames = [
+    #     '63b92796-bbb1-11e8-b2ba-ac1f6b6435d0.pt',
+    #     'c4e26ac2-bbc6-11e8-b2bc-ac1f6b6435d0.pt',
+    #     '801d7256-bba8-11e8-b2ba-ac1f6b6435d0.pt',
+    #     '6a5d50c6-bbad-11e8-b2ba-ac1f6b6435d0.pt',
+    #     'a8ae3280-bba5-11e8-b2ba-ac1f6b6435d0.pt',
+    #     '4b0fe352-bbbf-11e8-b2ba-ac1f6b6435d0.pt',
+    #     'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0.pt'
+    #     ]
     # filenames = [
     #     '79e74f26-bbc9-11e8-b2bc-ac1f6b6435d0',
     #     '63b92796-bbb1-11e8-b2ba-ac1f6b6435d0',
@@ -391,9 +416,16 @@ if __name__ == '__main__':
     #     '6e0e22ce-bbb0-11e8-b2ba-ac1f6b6435d0',
     #     'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0'
     #     ]
-    data_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
-    checkpoint = "models/unet/UNET_hpa_gc_0019.ckpt"
-    cell_path = '/nobackup/users/vinhle/data/hpa_data/hpa_cell_mask/'
-    metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/metadata.json'
-    plot_different_outputs_HPA(filenames, checkpoint, data_path)
+    # data_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
+    # checkpoint = "models/unet/UNET_hpa_gc_0019.ckpt"
+    # cell_path = '/nobackup/users/vinhle/data/hpa_data/hpa_cell_mask/'
+    # metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/metadata.json'
+    # plot_different_outputs_HPA(filenames, checkpoint, data_path)
     # print(hpa_classification_accuracy(filenames, checkpoint, data_path, cell_path, metadata_path))
+    in_channels = 7
+    out_channels = 3
+    checkpoint_path = 'models/unet/UNET_single_0999.ckpt'
+    paths = ['/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/','/nobackup/users/vinhle/data/procodes_data/unet_train_single/truth/']
+    image_size=(2048,2048)
+    single_image_result(in_channels,out_channels,checkpoint_path,paths,image_size)
+
