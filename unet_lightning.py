@@ -70,19 +70,21 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
     :return: Nothing, but the model should be saved every 5 epochs at model_path
     '''
     start = time.time()
-    seed_everything(22, workers=True)
+    seed_everything(24, workers=True)
 
     # Initialize model, and load in checkpoint if necessary
     unet, _ = create_pretrained('resnet34', None, in_channels=in_chans, classes=out_chans)
     if checkpoint_location:
-        unet_pl = UnetLightning.load_from_checkpoint("/path/to/checkpoint.ckpt")
+        unet_pl = UnetLightning.load_from_checkpoint(unet, checkpoint_location)
     else:
         unet_pl = UnetLightning(unet, learning_rate=0.0001)
     # Initialize data module for loading in data
     z = ProCodesDataModule(data_dir=data_path, batch_size=batch_size,
-                           test_size=0.0, image_size=(2048,2048))
+                           test_size=.05, image_size=(2048,2048))
     train_loader = z.train_dataloader()
+    print('number of training batches:', len(train_loader))
     val_loader = z.validation_dataloader()
+    print('number of validation batches:', len(val_loader))
     # Setup logger to track metrics for training over time
     logger = TensorBoardLogger("runs/", name="unet_hpa")
     checkpoint_callback = ModelCheckpoint(
@@ -92,12 +94,12 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
         save_on_train_epoch_end=True,
         dirpath=model_path,
         auto_insert_metric_name=False,
-        filename="UNET_single_{epoch:04d}",
+        filename="UNET_procodes_neurites_{epoch:04d}",
     )
     # Set up the trainer function and begin training
-    trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback],
+    trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback],benchmark=True,
                       check_val_every_n_epoch=1, logger=logger, strategy="ddp_find_unused_parameters_false")
-    trainer.fit(unet_pl, train_loader, val_loader)
+    trainer.fit(unet_pl, train_dataloaders = train_loader, val_dataloaders = val_loader)
     print((time.time() - start) / 60, 'minutes to run')
 
 
@@ -117,4 +119,4 @@ if __name__ == '__main__':
     path = [args.train_path, args.label_path]
     gpus = int(args.gpus) if args.gpus else 1
     checkpoint = args.checkpoint if args.checkpoint else None
-    train(path, model_path, epochs, batch_size, gpus, checkpoint, in_chans=7, out_chans=3)
+    train(path, model_path, epochs, batch_size, gpus, checkpoint, in_chans=3, out_chans=3)

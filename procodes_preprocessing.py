@@ -1,3 +1,4 @@
+import os
 import time
 import torch
 import pandas as pd
@@ -11,7 +12,7 @@ from matplotlib.colors import ListedColormap
 from skimage.measure import label, regionprops
 from skimage.morphology import opening, closing, remove_small_objects
 import matplotlib.ticker as ticker
-from utils import make_plotable
+from utils import make_plotable, normalize_array
 
 def load_tif(path):
     img = volread(path)
@@ -129,88 +130,81 @@ def prepare_grayscale_mask(img, footprint_size=(12, 12)):
 
 
 
-def make_grayscale(img, footprint_size=(12, 12)):
-    img_maxed = img.max(axis=1)
-    del img
-    masks = prepare_grayscale_mask(img_maxed, footprint_size=footprint_size)
-    assert img_maxed.shape == masks.shape, "Shape of Z-Flattened Image must match Stack of Masks"
+def make_grayscale(img, masks):
+    print(img.shape, masks.shape)
+    assert img.shape == masks.shape, "Shape of Z-Flattened Image must match Stack of Masks"
     # get grayscale values
     # img_maxed = torch.from_numpy(img_maxed)
-    grayscale = img_maxed.mean(0)
-    input_img = np.zeros_like(img_maxed)
+    grayscale = img.mean(0)
+    input_img = np.zeros_like(img)
     # place the grayscale values in each channel
-    for i in tqdm(range(img_maxed.shape[0])):
+    for i in tqdm(range(img.shape[0])):
         # mask_i = masks[i]
         # img_i = img_maxed[i]
         input_img[i,:,:] = grayscale
 
     # mask to place color where it should be colored
-    input_img[masks] = img_maxed[masks]
+    input_img[masks] = img[masks]
     return input_img
+
+
+def prepare_training_data(org_path, codebook_path, markers_path, end_path):
+    # to do
+    # 1) load in image, one at a time from a path
+    # 2) get the nuclear channel and get a boolean mask from that
+    # 2) do preprocessing
+    # 3) grab correct rows and columns from codebook
+    # 4) grab correct channels from preprocessed image
+    # 5) make grayscale image for training data using mask from
+    for path in tqdm(os.listdir(org_path)):
+        if '.tif' not in path:
+            continue
+        filename = path[path.rfind('/')+1:path.rfind('.')]
+        img = volread(org_path+path)
+        nuclear_channel = img[0].max(0)
+        thresh = threshold_otsu(nuclear_channel)
+        nuclear_channel = nuclear_channel > thresh*1.35
+        nuclear_mask = np.stack([nuclear_channel,nuclear_channel,nuclear_channel], axis=0)
+        codebook = pd.read_csv(codebook_path, sep='.', index_col=0)
+        markers = pd.read_csv(markers_path)
+        idx = codebook.index.tolist()
+        idx.pop(2)
+        codebook = codebook.reindex(idx + ['FLAG'])
+        codebook = codebook[['A2', 'AA5', 'D4']]
+        img = prepare_mp_input(img, codebook, markers)
+        img = img[[False, True, False, True, False, True, False]]
+        img = img.max(axis=1)
+        truth = torch.from_numpy(img.copy())
+        codebook = codebook.loc[['VSVG','HSV','C','S','Ollas']]
+        train_image = torch.from_numpy(make_grayscale(img, nuclear_mask))
+        torch.save(truth, f'{end_path}truth/{filename}.pt')
+        torch.save(train_image, f'{end_path}train/{filename}.pt')
+    print('Done!')
+
 
 
 if __name__ == '__main__':
     # start_time = time.time()
-    img = volread('data/F05.tif')
-    # codebook = pd.read_csv('codebook.csv',sep='.',index_col=0)
-    # markers = pd.read_csv('markers.csv')
-    # idx = codebook.index.tolist()
-    # idx.pop(2)
-    # codebook = codebook.reindex(idx + ['FLAG'])
+    # img = volread('data/F05.tif')
+    # mp = torch.load('single.pt')
+    # path = '/nobackup/users/vinhle/data/procodes_data/unet_train_single/original_data/'
+    # codebook = '/nobackup/users/vinhle/data/procodes_data/unet_train_single/original_data/codebook.csv'
+    # markers = '/nobackup/users/vinhle/data/procodes_data/unet_train_single/original_data/markers.csv'
+    # out_path = '/nobackup/users/vinhle/data/procodes_data/unet_train_single/'
+    codebook = pd.read_csv('codebook.csv', sep='.', index_col=0)
+    # prepare_training_data(path,codebook,markers,out_path)
     # grab the correct rows
-    # codebook = codebook[['A2', 'AA5', 'D4']]
-    # our input to create train data
-    # print('preparing input')
-    # x = prepare_mp_input(img, codebook, markers)
-    # print('making grayscale')
-    # np.save('prepped_F05',x)
-    f = np.load('prepped_F05.npy')
-    nuclear_channel = img.max(0)[0]
-    # train_image = make_grayscale(x, footprint_size=(8,8))
-    # train_image = torch.from_numpy(train_image)
-    # torch.save(train_image, '/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/single.pt')
-    # print(train_image.shape)
+    codebook = codebook[['A2', 'AA5', 'D4']]
+    idx = codebook.index.tolist()
+    idx.pop(2)
+    codebook = codebook.reindex(idx + ['FLAG'])
+    codebook = codebook.loc[['VSVG','HSV','C','S','Ollas']]
 
-    # f1_test = f1[1:4]
-    # f1_test = make_plotable(f1_test, numpy_like=True)
-    # fig, ax = plt.subplots(1,2)
-    # fig.set_figheight(15)
-    # fig.set_figwidth(15)
-    # ax[0].imshow(f_test)
-    # ax[1].imshow(f1_test)
-    # ax[0].axis('off')
-    # ax[1].axis('off')
-    # plt.savefig('test_data.png')
-    # plt.clf()
-    print(f.shape)
-    for i in range(len(f)):
-        fig,ax = plt.subplots(1,2)
-        fig.set_figheight(15)
-        fig.set_figwidth(15)
-        fmax = f[i].max(0)
-        ax[0].imshow(nuclear_channel, vmin=np.quantile(nuclear_channel, 0.05), vmax=np.quantile(nuclear_channel, 0.95))
-        ax[1].imshow(fmax, vmin=np.quantile(fmax, 0.05), vmax=np.quantile(fmax, 0.95))
-        plt.show()
-        plt.close()
-
-    # opened = f1max
-    # footprint = np.ones((8, 8))
-    # area_closed = closing(opened, footprint)
-    # footprint = np.ones((8, 8))
-    # opened = opening(area_closed, footprint)
-    # f1max[f1max==0] = np.nan
-    # opened = np.where(opened > np.nanquantile(f1max, 0.90), 1, 0)
-    # ax[1].matshow(opened)
-    #
-    # opened_label, num = label(opened, return_num=True, connectivity=2)
-    # opened_label = remove_small_objects(opened_label)
-    # ax[2].matshow(opened_label)
-    # plt.show()
-    # plt.tight_layout()
-    # plt.savefig("test.png", bbox_inches='tight')
+    sns.heatmap(codebook, linewidths=1, linecolor='white')
+    plt.show()
+    # prepare_training_data('data/F05.tif', 'codebook.csv', 'markers.csv')
 
     # A = codebook.values.copy().T
-    # print(x.shape)
     # print(A.shape)
     # max_components = 3  # assuming maximum of three overlapping neurites..
     # fudge_factor = 0.25
@@ -220,6 +214,7 @@ if __name__ == '__main__':
     # z = z.clip(0, 1)
     # z = z.max(1)
     # print(z.shape)
+    # np.save('mp_result', z)
     # z = torch.from_numpy(z)
     # torch.save(z, '/nobackup/users/vinhle/data/procodes_data/unet_train_single/truth/single.pt')
     # print('total time: ', time.time() - start_time)

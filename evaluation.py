@@ -238,8 +238,8 @@ class identifiable_submatrices:
                     self.clean_matrices[row_order].append([new_mat, col_order])
 
 
-def generate_model_outputs(model_directory, model_list, input_img_list, img_size=(1, 3, 256, 256), output_path='',
-                           parallel=True):
+def generate_model_outputs(model_directory, model_list, data_path, input_img_list, img_size=(256, 256), output_path='',
+                           parallel=False, in_channels=3, out_channels=3):
     """
     :param model_directory: location of all models being used
     :param model_list: list of models by name being used in above location
@@ -247,27 +247,31 @@ def generate_model_outputs(model_directory, model_list, input_img_list, img_size
     :param output_path: where you want these outputs to be saved
     :return:
     """
+    z = ProCodesDataModule(data_dir=data_path, batch_size=1,
+                           test_size=0, image_size=img_size)
     for model_name in tqdm(model_list):
         model_path = model_directory + model_name
-        checkpoint = torch.load(model_path)
         # unet = UNet(num_class=3, retain_dim=True, out_sz=(256, 256), dropout=.10)
-        unet, _ = create_pretrained('resnet34', None)
-        if parallel:
-            unet = nn.DataParallel(unet)
-        unet.load_state_dict(checkpoint['model_state_dict'])
+        unet, _ = create_pretrained('resnet34', None, in_channels=in_channels, classes=out_channels)
+        unet = UnetLightning(unet)
+        checkpoint = torch.load(model_path)
+        unet.load_state_dict(checkpoint["state_dict"])
         unet.eval()
         cuda0 = torch.device('cuda:0')
         unet.to(cuda0)
-        for i in range(len(input_img_list)):
-            img = torch.load(input_img_list[i]).to(cuda0)
-            img = img.view(img_size)
-            output = unet(img)
-            print(model_name, model_name[:-4])
-            torch.save(output, f'{output_path}{model_name[:-4]}_{i}.pt')
+
+        train_loader = z.train
+
+        for filename in input_img_list:
+            img, truth = train_loader.get_item(filename)
+            img_shape = list(img.shape)
+            img = img.view([1] + img_shape).to(cuda0)
+
+            output = unet.predict(img)
+            torch.save(output, f'{output_path}{model_name[:model_name.rfind(".")]}_{filename}')
             del img
             del output
         del unet
-        del checkpoint
 
 
 def plot_different_outputs_HPA(filenames: list, checkpoint_path: str, data_path: str, plot_name: str ='example', dimensions: tuple = (512, 512)):
@@ -376,10 +380,11 @@ def single_image_result(in_channels, out_channels, checkpoint_path, paths, image
     checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
-    dataloader = ProCodesDataModule(paths, test_size=0, image_size=image_size)
+    dataloader = ProCodesDataModule(paths, test_size=2, image_size=image_size)
     training = dataloader.train_dataloader()
     for item in training:
         x,y = item
+        break
     y_hat = model.predict(x)
     y = make_plotable(y[0])
     y_hat = make_plotable(y_hat[0])
@@ -404,28 +409,30 @@ if __name__ == '__main__':
     #     '4b0fe352-bbbf-11e8-b2ba-ac1f6b6435d0.pt',
     #     'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0.pt'
     #     ]
-    # filenames = [
-    #     '79e74f26-bbc9-11e8-b2bc-ac1f6b6435d0',
-    #     '63b92796-bbb1-11e8-b2ba-ac1f6b6435d0',
-    #     'c4e26ac2-bbc6-11e8-b2bc-ac1f6b6435d0',
-    #     '801d7256-bba8-11e8-b2ba-ac1f6b6435d0',
-    #     '6a5d50c6-bbad-11e8-b2ba-ac1f6b6435d0',
-    #     '21dc6a76-bbbc-11e8-b2ba-ac1f6b6435d0',
-    #     'a8ae3280-bba5-11e8-b2ba-ac1f6b6435d0',
-    #     '4b0fe352-bbbf-11e8-b2ba-ac1f6b6435d0',
-    #     '6e0e22ce-bbb0-11e8-b2ba-ac1f6b6435d0',
-    #     'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0'
-    #     ]
+    #['/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/F34.pt',
+    # ['/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/F44.pt',
+    # '/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/F29.pt']
+    data_path = ['/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/',
+                 '/nobackup/users/vinhle/data/procodes_data/unet_train_single/truth/']
+
+    files = ['F34.pt',
+         'F44.pt',
+         'F29.pt',
+         ]
+    # fo3 not in test set
+
     # data_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
     # checkpoint = "models/unet/UNET_hpa_gc_0019.ckpt"
     # cell_path = '/nobackup/users/vinhle/data/hpa_data/hpa_cell_mask/'
     # metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/metadata.json'
     # plot_different_outputs_HPA(filenames, checkpoint, data_path)
     # print(hpa_classification_accuracy(filenames, checkpoint, data_path, cell_path, metadata_path))
-    in_channels = 7
+    in_channels = 3
     out_channels = 3
-    checkpoint_path = 'models/unet/UNET_single_0999.ckpt'
+    model_names=['UNET_procodes_neurites_0664.ckpt']
+    checkpoint_path = 'models/unet/'
     paths = ['/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/','/nobackup/users/vinhle/data/procodes_data/unet_train_single/truth/']
     image_size=(2048,2048)
-    single_image_result(in_channels,out_channels,checkpoint_path,paths,image_size)
+    # single_image_result(in_channels,out_channels,checkpoint_path,paths,image_size)
+    generate_model_outputs(checkpoint_path, model_names, data_path, files, img_size=(2048,2048), output_path='outputs/')
 

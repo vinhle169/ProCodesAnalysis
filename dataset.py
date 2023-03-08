@@ -24,17 +24,19 @@ class ProCodes(torch.utils.data.Dataset):
             "Path to data folder is required"
         super(ProCodes).__init__()
         self.paths = paths
+        self.name_to_idx = {paths[0][i][paths[0][i].rfind('/')+1:]:i for i in range(len(paths[0]))}
         self.image_size = image_size
         self.transforms = transform
         print("Done")
 
     def __getitem__(self, idx):
         """
-        :param train_set: boolean where True means use the train set, False means test set, and None means entire set
         :param idx: index to index into set of data
         :param transform: boolean to decide to get transformed data or not
         :return: image as a tensor
         """
+        if type(idx) is not int:
+            pass
         inp_path, mask_path = self.paths[0][idx], self.paths[1][idx]
         # i = inp_path.find("train")
         # zero_mask_path = f'{inp_path[:i]}/classification_mask/{inp_path[inp_path.rfind("/") + 1:]}'
@@ -56,6 +58,11 @@ class ProCodes(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.paths[0])
+
+    def get_item(self, name):
+        idx = self.name_to_idx[name]
+        return self[idx]
+
 
 
 class ProCodesDataModule(pl.LightningDataModule):
@@ -83,7 +90,7 @@ class ProCodesDataModule(pl.LightningDataModule):
         self.setup(stage=stage)
 
     def setup(self, stage: str = None):
-        if len(self.items[0]) == 1:
+        if len(self.items[0]) == 1 or not self.test_size:
             self.xtrain = self.items[0]
             self.xval = self.items[0]
             self.ytrain = self.items[1]
@@ -93,6 +100,7 @@ class ProCodesDataModule(pl.LightningDataModule):
         else:
             self.xtrain, self.xtest, self.ytrain, self.ytest = train_test_split(self.items[0], self.items[1], test_size=self.test_size)
             # want val size == test size
+            print(len(self.xtrain), len(self.xtest))
             self.xval, self.xtest, self.yval, self.ytest = train_test_split(self.xtest, self.ytest, test_size=0.5)
             print("VAL SET EXAMPLES: ", self.xval[0:10])
             print("TEST SET EXAMPLES: ", self.xtest[0:10])
