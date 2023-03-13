@@ -191,34 +191,16 @@ if __name__ == '__main__':
     # codebook = '/nobackup/users/vinhle/data/procodes_data/unet_train_single/original_data/codebook.csv'
     # markers = '/nobackup/users/vinhle/data/procodes_data/unet_train_single/original_data/markers.csv'
     # out_path = '/nobackup/users/vinhle/data/procodes_data/unet_train_single/'
-    codebook = pd.read_csv('codebook.csv', sep='.', index_col=0)
-    # prepare_training_data(path,codebook,markers,out_path)
-    # grab the correct rows
-    codebook = codebook[['A2', 'AA5', 'D4']]
-    idx = codebook.index.tolist()
-    idx.pop(2)
-    codebook = codebook.reindex(idx + ['FLAG'])
-    codebook = codebook.loc[['VSVG','HSV','C','S','Ollas']]
+    # codebook = pd.read_csv('codebook.csv', sep='.', index_col=0)
+    path = "/nobackup/users/vinhle/data/procodes_data/unet_train/"
+    extra = "original_data/coverslip /mp_score_max/"
+    nums = [1,2,3,4,5]
+    for num in nums:
+        p = path+extra.replace(" ", str(num))
+        for filename in os.listdir(p):
+            mp_result = volread(p+filename)
 
-    sns.heatmap(codebook, linewidths=1, linecolor='white')
-    plt.show()
-    # prepare_training_data('data/F05.tif', 'codebook.csv', 'markers.csv')
 
-    # A = codebook.values.copy().T
-    # print(A.shape)
-    # max_components = 3  # assuming maximum of three overlapping neurites..
-    # fudge_factor = 0.25
-    #
-    # # run MP
-    # z = matching_pursuit(x, A, max_components, fudge_factor)
-    # z = z.clip(0, 1)
-    # z = z.max(1)
-    # print(z.shape)
-    # np.save('mp_result', z)
-    # z = torch.from_numpy(z)
-    # torch.save(z, '/nobackup/users/vinhle/data/procodes_data/unet_train_single/truth/single.pt')
-    # print('total time: ', time.time() - start_time)
-    # cm = ListedColormap(['red','green','blue'])
     # cm.set_bad('black')
     # plt.figure(figsize=(12, 12))
     # plt.gca().matshow(np.where(z.max(1).max(0) == 0, np.nan, z.max(1).argmax(0)), cmap=cm)
