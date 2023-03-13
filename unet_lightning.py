@@ -15,7 +15,8 @@ class UnetLightning(pl.LightningModule):
     def __init__(self, unet, learning_rate=0.0001):
         super().__init__()
         self.model = unet
-        self.loss_fn = nn.MSELoss(reduction='mean')
+        # self.loss_fn = nn.MSELoss(reduction='mean')
+        self.loss_fn = nn.L1Loss(reduction='mean')
         self.learning_rate = learning_rate
         self.running_loss = 0
         self.running_val_loss = 0

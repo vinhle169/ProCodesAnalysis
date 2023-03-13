@@ -62,10 +62,14 @@ def normalize_array_t(array):
     return (array - torch.min(array)) / (torch.max(array) - torch.min(array))
 
 
-def normalize_array(array):
+def normalize_array(array, min_max: bool = True):
 
-    denom = np.max(array) - np.min(array)
-    return (array - np.min(array)) / denom
+    if min_max:
+        denom = np.max(array) - np.min(array)
+        return (array - np.min(array)) / denom
+    else:
+        top, bottom = np.percentile(array, 99), np.percentile(array, 1)
+        return np.clip(array, a_min=bottom, a_max=top)
 
 
 def fixed_blobs(img_shape, v_stride: int, w_stride: int, blob_len: int, v_padding: int = 0,

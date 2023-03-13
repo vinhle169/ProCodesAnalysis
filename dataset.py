@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 
 class ProCodes(torch.utils.data.Dataset):
 
-    def __init__(self, paths, image_size, transform=None):
+    def __init__(self, paths, image_size, transform=None, in_memory=False):
         """
         :param path: path to the folder containing all the files
         :param transform: optional transforms from the imgaug python package
@@ -23,8 +23,19 @@ class ProCodes(torch.utils.data.Dataset):
         assert paths is not None, \
             "Path to data folder is required"
         super(ProCodes).__init__()
-        self.paths = paths
-        self.name_to_idx = {paths[0][i][paths[0][i].rfind('/')+1:]:i for i in range(len(paths[0]))}
+        # so we can grab a any certain file, knowing the filename
+        self.name_to_idx = {paths[0][i][paths[0][i].rfind('/') + 1:]: i for i in range(len(paths[0]))}
+        if in_memory:
+            print("Loading in Training Input Images")
+            path_x = torch.stack([torch.load(i) for i in paths[0]])
+            print("Loading in Training Target Output Images")
+            path_y = torch.stack([torch.load(i) for i in paths[1]])
+            print(path_x.shape, path_y.shape)
+            self.paths = torch.stack([path_x,path_y])
+            print(self.paths.shape)
+        else:
+            self.paths = paths
+        self.in_memory = in_memory
         self.image_size = image_size
         self.transforms = transform
         print("Done")
@@ -35,13 +46,12 @@ class ProCodes(torch.utils.data.Dataset):
         :param transform: boolean to decide to get transformed data or not
         :return: image as a tensor
         """
-        if type(idx) is not int:
-            pass
-        inp_path, mask_path = self.paths[0][idx], self.paths[1][idx]
+        inp, mask = self.paths[0][idx], self.paths[1][idx]
         # i = inp_path.find("train")
         # zero_mask_path = f'{inp_path[:i]}/classification_mask/{inp_path[inp_path.rfind("/") + 1:]}'
         # zero_mask = torch.load(zero_mask_path)
-        inp, mask = torch.load(inp_path), torch.load(mask_path)
+        if not self.in_memory:
+            inp, mask = torch.load(inp), torch.load(mask)
         if self.transforms:
             inp = self.transforms(inp)
         if self.image_size:
@@ -66,7 +76,7 @@ class ProCodes(torch.utils.data.Dataset):
 
 
 class ProCodesDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir, batch_size: int = 1, test_size: float = .3, transform = None, stage=None, image_size=None):
+    def __init__(self, data_dir, batch_size: int = 1, test_size: float = .3, transform = None, stage=None, image_size=None, in_memory=False):
         '''
         :param data_dir:
         :param batch_size:
@@ -87,9 +97,10 @@ class ProCodesDataModule(pl.LightningDataModule):
         self.items = [[directory + filename for filename in os.listdir(directory)] for directory in self.data_dir]
         assert data_dir is not None, \
             "Path to data folder is required"
-        self.setup(stage=stage)
+        if in_memory: print("WARNING: ONLY ATTEMPT LOADING IN MEMORY IF THERE IS ENOUGH SPACE")
+        self.setup(stage=stage,in_memory=in_memory)
 
-    def setup(self, stage: str = None):
+    def setup(self, stage: str = None, in_memory: bool = False):
         if len(self.items[0]) == 1 or not self.test_size:
             self.xtrain = self.items[0]
             self.xval = self.items[0]
@@ -102,12 +113,12 @@ class ProCodesDataModule(pl.LightningDataModule):
             # want val size == test size
             print(len(self.xtrain), len(self.xtest))
             self.xval, self.xtest, self.yval, self.ytest = train_test_split(self.xtest, self.ytest, test_size=0.5)
-            print("VAL SET EXAMPLES: ", self.xval[0:10])
-            print("TEST SET EXAMPLES: ", self.xtest[0:10])
+            print("VAL SET EXAMPLES: ", self.xval[0:min(len(self.xval),5)])
+            print("TEST SET EXAMPLES: ", self.xtest[0:min(len(self.xval),5)])
         if stage in (None, "test"):
             self.test = ProCodes([self.xtest, self.ytest], image_size=self.image_size)
         if stage in (None, "fit"):
-            self.train = ProCodes([self.xtrain, self.ytrain], image_size=self.image_size, transform=self.transform)
+            self.train = ProCodes([self.xtrain, self.ytrain], image_size=self.image_size, transform=self.transform, in_memory=in_memory)
             self.val = ProCodes([self.xval, self.yval], image_size=self.image_size, transform=self.transform)
 
     def train_dataloader(self):
