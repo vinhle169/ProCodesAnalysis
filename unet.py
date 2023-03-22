@@ -119,8 +119,11 @@ class UNet(Module):
             out = F.interpolate(out, self.out_sz).clamp(min=0, max=1)
         return out
 
-def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=3, preprocess_only=False):
+def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=3,
+                      activation=None, preprocess_only=False):
     preprocess_fn = None
+    activations = {"identity", None, "sigmoid", "softmax2d","softmax","logsoftmax","tanh","argmax","argmax2d", "clamp"}
+    assert activation in activations, "Not a valid activation layer"
     if encoder_weights:
         preprocess_fn = get_preprocessing_fn(encoder_name, pretrained=encoder_weights)
         if preprocess_only:
@@ -130,7 +133,7 @@ def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_ch
         encoder_weights=encoder_weights,  # use 'imagenet' 'swsl'
         in_channels=in_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
         classes=classes,  # model output channels (number of classes in your dataset)
-        activation=None,  # type of activation function for the final layer
+        activation=activation,  # type of activation function for the final layer
         decoder_use_batchnorm=True
     )
     return model, preprocess_fn

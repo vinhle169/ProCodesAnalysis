@@ -247,6 +247,8 @@ def generate_model_outputs(model_directory, model_list, data_path, input_img_lis
     :param output_path: where you want these outputs to be saved
     :return:
     """
+    assert torch.cuda.is_available(), "Need GPU to run this function"
+    print(data_path, 'in funct in eval')
     z = ProCodesDataModule(data_dir=data_path, batch_size=1,
                            test_size=0, image_size=img_size)
     for model_name in tqdm(model_list):
@@ -266,7 +268,6 @@ def generate_model_outputs(model_directory, model_list, data_path, input_img_lis
             img, truth = train_loader.get_item(filename)
             img_shape = list(img.shape)
             img = img.view([1] + img_shape).to(cuda0)
-
             output = unet.predict(img)
             torch.save(output, f'{output_path}{model_name[:model_name.rfind(".")]}_{filename}')
             del img
@@ -398,41 +399,52 @@ def single_image_result(in_channels, out_channels, checkpoint_path, paths, image
     plt.savefig('single_test.png')
 
 
+def plot_outputs(output_path, filenames, data_path, model_names, result_img_path='output_images/', cpu=True):
+    for file in filenames:
+        input_filename = data_path + 'train/' + file
+        truth_filename = data_path + 'truth/' + file
+        if cpu:
+            img_x = torch.load(input_filename, map_location=torch.device('cpu'))
+            img_y = torch.load(truth_filename, map_location=torch.device('cpu'))
+        else:
+            img_x = torch.load(input_filename)
+            img_y = torch.load(truth_filename)
+        img_x = make_plotable(img_x)
+        img_x = np.where(img_x.max(-1) == 0, np.nan, img_x.argmax(-1))
+        img_y = make_plotable(img_y)
+        img_y = np.where(img_y.max(-1) == 0, np.nan, img_y.argmax(-1))
+        for model_name in model_names:
+            output_filename = output_path + model_name + '_' + file
+            if cpu:
+                img_pred = torch.load(output_filename, map_location=torch.device('cpu'))[0]
+            else:
+                img_pred = torch.load(output_filename)[0]
+            img_pred = make_plotable(img_pred)
+            img_pred = np.where(img_pred.max(-1) == 0, np.nan, img_pred.argmax(-1))
+            fig, ax = plt.subplots(1,3)
+            fig.set_figwidth(15)
+            fig.set_figwidth(20)
+            ax[0].matshow(img_x)
+            ax[1].matshow(img_pred)
+            ax[2].matshow(img_y)
+            plt.savefig(f'{result_img_path}{file}_{model_name}.png')
+            plt.clf()
+
+
+
 
 if __name__ == '__main__':
-    # filenames = [
-    #     '63b92796-bbb1-11e8-b2ba-ac1f6b6435d0.pt',
-    #     'c4e26ac2-bbc6-11e8-b2bc-ac1f6b6435d0.pt',
-    #     '801d7256-bba8-11e8-b2ba-ac1f6b6435d0.pt',
-    #     '6a5d50c6-bbad-11e8-b2ba-ac1f6b6435d0.pt',
-    #     'a8ae3280-bba5-11e8-b2ba-ac1f6b6435d0.pt',
-    #     '4b0fe352-bbbf-11e8-b2ba-ac1f6b6435d0.pt',
-    #     'bd42d526-bbb8-11e8-b2ba-ac1f6b6435d0.pt'
-    #     ]
-    #['/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/F34.pt',
-    # ['/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/F44.pt',
-    # '/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/F29.pt']
-    data_path = ['/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/',
-                 '/nobackup/users/vinhle/data/procodes_data/unet_train_single/truth/']
+    data_path = '/nobackup/users/vinhle/data/procodes_data/unet_train/'
 
-    files = ['F34.pt',
-         'F44.pt',
-         'F29.pt',
+    files = ['2_F196_mp_score_max.pt',
+         '1_F170_mp_score_max.pt',
+         '3_F077_mp_score_max.pt',
          ]
-    # fo3 not in test set
 
-    # data_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
-    # checkpoint = "models/unet/UNET_hpa_gc_0019.ckpt"
-    # cell_path = '/nobackup/users/vinhle/data/hpa_data/hpa_cell_mask/'
-    # metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/metadata.json'
-    # plot_different_outputs_HPA(filenames, checkpoint, data_path)
-    # print(hpa_classification_accuracy(filenames, checkpoint, data_path, cell_path, metadata_path))
-    in_channels = 3
-    out_channels = 3
-    model_names=['UNET_procodes_neurites_0664.ckpt']
-    checkpoint_path = 'models/unet/'
-    paths = ['/nobackup/users/vinhle/data/procodes_data/unet_train_single/train/','/nobackup/users/vinhle/data/procodes_data/unet_train_single/truth/']
-    image_size=(2048,2048)
+    model_names=['UNET_22_procodes_1989', 'UNET_22_procodes_1739']
+    output_path = 'outputs/'
     # single_image_result(in_channels,out_channels,checkpoint_path,paths,image_size)
-    generate_model_outputs(checkpoint_path, model_names, data_path, files, img_size=(2048,2048), output_path='outputs/')
+    # generate_model_outputs(checkpoint_path, model_names, data_path, files, img_size=image_size, output_path='outputs/',
+    #                        in_channels=in_channels, out_channels=out_channels)
+    plot_outputs(output_path, files, data_path, model_names)
 

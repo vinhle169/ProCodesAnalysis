@@ -586,14 +586,14 @@ def hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, n
 
 
 if __name__ == '__main__':
-    cell_path = '/nobackup/users/vinhle/data/hpa_data/hpa_cell_mask/'
-    nuclei_path = '/nobackup/users/vinhle/data/hpa_data/hpa_nuclei_mask/'
-    org_path = '/nobackup/users/vinhle/data/hpa_data/hpa_original/'
-    org_path2 = '/nobackup/users/vinhle/data/hpa_data/hpa_original_test/'
-    new_train_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/train/'
-    new_truth_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/truth/'
-    metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
-    img_size = (512, 512, 3)
+    # cell_path = '/nobackup/users/vinhle/data/hpa_data/hpa_cell_mask/'
+    # nuclei_path = '/nobackup/users/vinhle/data/hpa_data/hpa_nuclei_mask/'
+    # org_path = '/nobackup/users/vinhle/data/hpa_data/hpa_original/'
+    # org_path2 = '/nobackup/users/vinhle/data/hpa_data/hpa_original_test/'
+    # new_train_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/train/'
+    # new_truth_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/truth/'
+    # metadata_path = '/nobackup/users/vinhle/data/hpa_data/hpa_train/'
+    # img_size = (512, 512, 3)
     # hpa_kaggle_transform_data(cell_path, nuclei_path, org_path, metadata_path, new_train_path, new_truth_path, img_size=img_size)
     # np_img = imread('unet.png')
     # print(np_img.shape)
@@ -604,9 +604,16 @@ if __name__ == '__main__':
     # y = make_plotable(y)
     # axs[1].imshow(y)
     # plt.show()
-    f05 = display_codebook('results/codebook.csv')
+    # f05 = display_codebook('results/codebook.csv')
     # print(f05)
 
+    data_path = ['/nobackup/users/vinhle/data/procodes_data/unet_train/train/',
+                 '/nobackup/users/vinhle/data/procodes_data/unet_train/truth/']
+
+    files = ['2_F196_mp_score_max.pt',
+             '1_F170_mp_score_max.pt',
+             '3_F077_mp_score_max.pt',
+             ]
 
 
 

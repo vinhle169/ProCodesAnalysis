@@ -1,12 +1,15 @@
 import os
+import json
 import torch
 import numpy as np
-from torchvision import transforms
 from utils import *
 import numpy.random as npr
+import multiprocessing as mp
+import datetime
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
-import multiprocessing as mp
+from torchvision import transforms
+
 
 from sklearn.model_selection import train_test_split
 
@@ -76,7 +79,8 @@ class ProCodes(torch.utils.data.Dataset):
 
 
 class ProCodesDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir, batch_size: int = 1, test_size: float = .3, transform = None, stage=None, image_size=None, in_memory=False):
+    def __init__(self, data_dir, batch_size: int = 1, test_size: float = .3, transform = None, stage=None,
+                 image_size=None, in_memory=False, metadata=False):
         '''
         :param data_dir:
         :param batch_size:
@@ -98,9 +102,9 @@ class ProCodesDataModule(pl.LightningDataModule):
         assert data_dir is not None, \
             "Path to data folder is required"
         if in_memory: print("WARNING: ONLY ATTEMPT LOADING IN MEMORY IF THERE IS ENOUGH SPACE")
-        self.setup(stage=stage,in_memory=in_memory)
+        self.setup(stage=stage,in_memory=in_memory,metadata=metadata)
 
-    def setup(self, stage: str = None, in_memory: bool = False):
+    def setup(self, stage: str = None, in_memory: bool = False, metadata: bool = False):
         if len(self.items[0]) == 1 or not self.test_size:
             self.xtrain = self.items[0]
             self.xval = self.items[0]
@@ -111,10 +115,23 @@ class ProCodesDataModule(pl.LightningDataModule):
         else:
             self.xtrain, self.xtest, self.ytrain, self.ytest = train_test_split(self.items[0], self.items[1], test_size=self.test_size)
             # want val size == test size
-            print(len(self.xtrain), len(self.xtest))
             self.xval, self.xtest, self.yval, self.ytest = train_test_split(self.xtest, self.ytest, test_size=0.5)
-            print("VAL SET EXAMPLES: ", self.xval[0:min(len(self.xval),5)])
-            print("TEST SET EXAMPLES: ", self.xtest[0:min(len(self.xval),5)])
+            if metadata:
+                file_dict = {}
+                file_dict['train'] = self.xtrain
+                file_dict['val'] = self.xval
+                file_dict['test'] = self.xtest
+                idx = self.data_dir[0][:-1].rfind('/')
+                save_path = self.data_dir[0][:idx+1]
+                date = datetime.date.today().strftime('%y-%m-%d')
+                filename = save_path + f'metadata_{date}.json'
+                print(filename)
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(file_dict, f, ensure_ascii=False, indent=4)
+                print("Metadata file created and saved.")
+            else:
+                print("VAL SET EXAMPLES: ", self.xval[0:min(len(self.xval),5)])
+                print("TEST SET EXAMPLES: ", self.xtest[0:min(len(self.xval),5)])
         if stage in (None, "test"):
             self.test = ProCodes([self.xtest, self.ytest], image_size=self.image_size)
         if stage in (None, "fit"):
@@ -132,7 +149,10 @@ class ProCodesDataModule(pl.LightningDataModule):
 
 if __name__ == '__main__':
     # torch.cuda.empty_cache()
-    pass
+    data_path = ['/nobackup/users/vinhle/data/procodes_data/unet_train/train/','/nobackup/users/vinhle/data/procodes_data/unet_train/truth/']
+    z = ProCodesDataModule(data_dir=data_path, batch_size=4,
+                           test_size=.30, image_size=(256, 256), in_memory=False, metadata=True)
+    train_loader = z.train_dataloader()
 
 
 

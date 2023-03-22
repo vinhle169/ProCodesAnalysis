@@ -182,6 +182,8 @@ def prepare_training_data(org_path, codebook_path, markers_path, end_path):
     print('Done!')
 
 
+def make_displayable(procodes_img):
+
 
 if __name__ == '__main__':
     # start_time = time.time()
