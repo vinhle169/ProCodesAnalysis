@@ -399,8 +399,11 @@ def single_image_result(in_channels, out_channels, checkpoint_path, paths, image
     plt.savefig('single_test.png')
 
 
-def plot_outputs(output_path, filenames, data_path, model_names, result_img_path='output_images/', cpu=True):
-    for file in filenames:
+def plot_outputs(output_path, filenames, data_path, model_names, result_img_path='output_images/', cpu=True, rgb=False,
+                 channels=[], luminance_scale=1):
+    if rgb:
+        assert len(channels) == 3, 'Need to specify 3 channels in a list to display as rgb'
+    for file in tqdm(filenames):
         input_filename = data_path + 'train/' + file
         truth_filename = data_path + 'truth/' + file
         if cpu:
@@ -410,41 +413,62 @@ def plot_outputs(output_path, filenames, data_path, model_names, result_img_path
             img_x = torch.load(input_filename)
             img_y = torch.load(truth_filename)
         img_x = make_plotable(img_x)
-        img_x = np.where(img_x.max(-1) == 0, np.nan, img_x.argmax(-1))
         img_y = make_plotable(img_y)
-        img_y = np.where(img_y.max(-1) == 0, np.nan, img_y.argmax(-1))
+        if rgb:
+            img_x = np.stack([img_x[:,:,i] for i in channels], axis=-1)
+            img_y = np.stack([img_y[:,:,i] for i in channels], axis=-1)
+        else:
+            img_x = np.where(img_x.max(-1) == 0, np.nan, img_x.argmax(-1))
+            img_y = np.where(img_y.max(-1) == 0, np.nan, img_y.argmax(-1))
         for model_name in model_names:
-            output_filename = output_path + model_name + '_' + file
+            output_filename = output_path + model_name[:model_name.rfind(".")] + '_' + file
             if cpu:
                 img_pred = torch.load(output_filename, map_location=torch.device('cpu'))[0]
             else:
                 img_pred = torch.load(output_filename)[0]
+
             img_pred = make_plotable(img_pred)
-            img_pred = np.where(img_pred.max(-1) == 0, np.nan, img_pred.argmax(-1))
-            fig, ax = plt.subplots(1,3)
+            fig, ax = plt.subplots(1, 3)
             fig.set_figwidth(15)
             fig.set_figwidth(20)
-            ax[0].matshow(img_x)
-            ax[1].matshow(img_pred)
-            ax[2].matshow(img_y)
-            plt.savefig(f'{result_img_path}{file}_{model_name}.png')
+            if rgb:
+                img_pred = np.stack([img_pred[:,:,i] for i in channels], -1)
+                ax[0].imshow(img_x * luminance_scale)
+                ax[1].imshow(img_pred * luminance_scale)
+                ax[2].imshow(img_y * luminance_scale)
+            else:
+                img_pred = np.where(img_pred.max(-1) == 0, np.nan, img_pred.argmax(-1))
+                ax[0].matshow(img_x * luminance_scale)
+                ax[1].matshow(img_pred * luminance_scale)
+                ax[2].matshow(img_y * luminance_scale)
+            plt.savefig(f'{result_img_path}{file[:file.rfind(".")]}_{model_name[:model_name.rfind(".")]}.png')
             plt.clf()
 
 
 
 
 if __name__ == '__main__':
-    data_path = '/nobackup/users/vinhle/data/procodes_data/unet_train/'
+    data_path = ['/nobackup/users/vinhle/data/procodes_data/unet_train/train/',
+                 '/nobackup/users/vinhle/data/procodes_data/unet_train/truth/']
 
-    files = ['2_F196_mp_score_max.pt',
-         '1_F170_mp_score_max.pt',
-         '3_F077_mp_score_max.pt',
-         ]
-
-    model_names=['UNET_22_procodes_1989', 'UNET_22_procodes_1739']
+    # files = ['2_F196_mp_score_max.pt',
+    #      '1_F170_mp_score_max.pt',
+    #      '3_F077_mp_score_max.pt',
+    #      ]
+    files = ['2_01_F196_mp_score_max.pt',
+             '1_00_F170_mp_score_max.pt',
+             '1_10_F170_mp_score_max.pt',
+             '1_01_F170_mp_score_max.pt',
+             '1_11_F170_mp_score_max.pt',
+             '3_01_F077_mp_score_max.pt',
+             ]
+    # "/nobackup/users/vinhle/data/procodes_data/unet_train/train/2_01_F196_mp_score_max.pt"
+    model_names=['UNET_22_procodes_patches_0284.ckpt', 'UNET_22_procodes_patches_0314.ckpt']
+    models_path = 'models/unet/'
     output_path = 'outputs/'
     # single_image_result(in_channels,out_channels,checkpoint_path,paths,image_size)
-    # generate_model_outputs(checkpoint_path, model_names, data_path, files, img_size=image_size, output_path='outputs/',
-    #                        in_channels=in_channels, out_channels=out_channels)
-    plot_outputs(output_path, files, data_path, model_names)
+    generate_model_outputs(models_path, model_names, data_path, files, output_path='outputs/',
+                           in_channels=22, out_channels=22)
+    # plot_outputs(output_path, files, '/nobackup/users/vinhle/data/procodes_data/unet_train/', model_names, rgb=True,
+    #              channels=[2,4,6], luminance_scale=3)
 
