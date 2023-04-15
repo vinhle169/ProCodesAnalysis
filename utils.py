@@ -320,12 +320,14 @@ def remove_outliers(img):
     return img
 
 
-def make_plotable(img, remove=False, numpy_like=False):
+def make_plotable(img, remove=False, numpy_like=False, normalize=False):
+    if normalize:
+        img = torch.stack([normalize_array_t(i) for i in img])
     if not numpy_like:
         img = img.detach().cpu().numpy()
     if remove:
         img = remove_outliers(img)
-    img = np.stack([normalize_array(i) for i in img], -1)
+    img = np.stack([i for i in img], -1)
     return img
 
 
