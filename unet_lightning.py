@@ -16,12 +16,14 @@ class UnetLightning(pl.LightningModule):
         super().__init__()
         self.model = unet
         # self.loss_fn = nn.MSELoss(reduction='mean')
+        # need this to load trainable model again
         self.loss_fn = nn.L1Loss(reduction='mean')
         self.learning_rate = learning_rate
         self.running_loss = 0
         self.running_val_loss = 0
         self.num_batches = 0
         self.num_batches_val = 0
+
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -76,7 +78,9 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
     # Initialize model, and load in checkpoint if necessary
     unet, _ = create_pretrained('resnet34', None, in_channels=in_chans, classes=out_chans, activation="sigmoid")
     if checkpoint_location:
-        unet_pl = UnetLightning.load_from_checkpoint(unet, checkpoint_location)
+        # checkpoint = torch.load(checkpoint_location)
+        unet_pl = UnetLightning(unet, learning_rate=0.0001)
+        unet_pl = unet_pl.load_from_checkpoint(unet=unet, checkpoint_path=checkpoint_location)
     else:
         unet_pl = UnetLightning(unet, learning_rate=0.0001)
     # Initialize data module for loading in data
@@ -95,7 +99,7 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
         save_on_train_epoch_end=True,
         dirpath=model_path,
         auto_insert_metric_name=False,
-        filename="UNET_22_procodes2_{epoch:04d}",
+        filename="UNET_22_test_{epoch:04d}",
     )
     # Set up the trainer function and begin training
     trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback], benchmark=True,
