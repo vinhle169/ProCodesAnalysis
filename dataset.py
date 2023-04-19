@@ -80,9 +80,9 @@ class ProCodes(torch.utils.data.Dataset):
 
 class ProCodesDataModule(pl.LightningDataModule):
     def __init__(self, data_dir, batch_size: int = 1, test_size: float = .3, transform = None, stage=None,
-                 image_size=None, in_memory=False, metadata=False):
+                 image_size=None, in_memory=False, metadata=False, load_metadata=None):
         '''
-        :param data_dir:
+        :param data_dir: size 2 list of input directory and target output directory
         :param batch_size:
         :param test_size:
          input path aka blob path and then the mask path which in this case is slices
@@ -102,10 +102,22 @@ class ProCodesDataModule(pl.LightningDataModule):
         assert data_dir is not None, \
             "Path to data folder is required"
         if in_memory: print("WARNING: ONLY ATTEMPT LOADING IN MEMORY IF THERE IS ENOUGH SPACE")
-        self.setup(stage=stage,in_memory=in_memory,metadata=metadata)
+        self.setup(stage=stage,in_memory=in_memory,metadata=metadata, load_metadata=load_metadata)
 
-    def setup(self, stage: str = None, in_memory: bool = False, metadata: bool = False):
-        if len(self.items[0]) == 1 or not self.test_size:
+    def setup(self, stage: str = None, in_memory: bool = False, metadata: bool = False, load_metadata: str = None):
+        if load_metadata:
+            print(f'Using {load_metadata} file')
+            with open(load_metadata, 'r') as f:
+                file_dict = json.load(f)
+            self.xtrain = file_dict['train']
+            self.xval = file_dict['val']
+            self.xtest = file_dict['test']
+            # hacky atm because old metadata files arent saved the new way yet
+            self.ytrain = [i[i.rfind('train'):] + i[:i.rfind('train')] for i in file_dict['train']]
+            self.yval = [i[i.rfind('truth'):] + i[:i.rfind('truth')] for i in file_dict['val']]
+            self.ytest = [i[i.rfind('truth'):] + i[:i.rfind('truth')] for i in file_dict['test']]
+
+        elif len(self.items[0]) == 1 or not self.test_size:
             self.xtrain = self.items[0]
             self.xval = self.items[0]
             self.ytrain = self.items[1]
@@ -116,8 +128,11 @@ class ProCodesDataModule(pl.LightningDataModule):
             self.xtrain, self.xtest, self.ytrain, self.ytest = train_test_split(self.items[0], self.items[1], test_size=self.test_size)
             # want val size == test size
             self.xval, self.xtest, self.yval, self.ytest = train_test_split(self.xtest, self.ytest, test_size=0.5)
+
             if metadata:
                 file_dict = {}
+                # file_dict['paths'] = {'train':self.data_dir[0], 'truth':self.data_dir[1]}
+                file_dict['train'] = self.xtrain
                 file_dict['train'] = self.xtrain
                 file_dict['val'] = self.xval
                 file_dict['test'] = self.xtest
@@ -129,6 +144,7 @@ class ProCodesDataModule(pl.LightningDataModule):
                 with open(filename, 'w', encoding='utf-8') as f:
                     json.dump(file_dict, f, ensure_ascii=False, indent=4)
                 print("Metadata file created and saved.")
+
             else:
                 print("VAL SET EXAMPLES: ", self.xval[0:min(len(self.xval),5)])
                 print("TEST SET EXAMPLES: ", self.xtest[0:min(len(self.xval),5)])
