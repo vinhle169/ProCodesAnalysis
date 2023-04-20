@@ -2,6 +2,9 @@
 *.tif
 *.tar
 *.pt
+*.png
+*.json
+*.npy
 data/
 fakedata/
 results/
