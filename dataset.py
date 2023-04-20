@@ -33,9 +33,8 @@ class ProCodes(torch.utils.data.Dataset):
             path_x = torch.stack([torch.load(i) for i in paths[0]])
             print("Loading in Training Target Output Images")
             path_y = torch.stack([torch.load(i) for i in paths[1]])
-            print(path_x.shape, path_y.shape)
+            print(f"{path_x.shape[0]} samples loaded")
             self.paths = torch.stack([path_x,path_y])
-            print(self.paths.shape)
         else:
             self.paths = paths
         self.in_memory = in_memory
@@ -113,9 +112,9 @@ class ProCodesDataModule(pl.LightningDataModule):
             self.xval = file_dict['val']
             self.xtest = file_dict['test']
             # hacky atm because old metadata files arent saved the new way yet
-            self.ytrain = [i[i.rfind('train'):] + i[:i.rfind('train')] for i in file_dict['train']]
-            self.yval = [i[i.rfind('truth'):] + i[:i.rfind('truth')] for i in file_dict['val']]
-            self.ytest = [i[i.rfind('truth'):] + i[:i.rfind('truth')] for i in file_dict['test']]
+            self.ytrain = [i[:i.rfind('train')] + i[i.rfind('train'):] for i in file_dict['train']]
+            self.yval = [i[:i.rfind('truth')] + i[i.rfind('truth'):] for i in file_dict['val']]
+            self.ytest = [i[:i.rfind('truth')] + i[i.rfind('truth'):] for i in file_dict['test']]
 
         elif len(self.items[0]) == 1 or not self.test_size:
             self.xtrain = self.items[0]
