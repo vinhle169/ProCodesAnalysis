@@ -121,6 +121,16 @@ class UNet(Module):
 
 def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=3,
                       activation=None, preprocess_only=False):
+    '''
+
+    :param encoder_name: type of encoder to use
+    :param encoder_weights: type of encoder weights to use
+    :param in_channels: number of input channels
+    :param classes: number of output channels (number of classes in your dataset)
+    :param activation: type of activation function for the final layer
+    :param preprocess_only: only return preprocessing function
+    :return:
+    '''
     preprocess_fn = None
     activations = {"identity", None, "sigmoid", "softmax2d","softmax","logsoftmax","tanh","argmax","argmax2d", "clamp"}
     assert activation in activations, "Not a valid activation layer"
@@ -132,8 +142,9 @@ def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_ch
         encoder_name=encoder_name,  # resnet34 resnet50
         encoder_weights=encoder_weights,  # use 'imagenet' 'swsl'
         in_channels=in_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
-        classes=classes,  # model output channels (number of classes in your dataset)
-        activation=activation,  # type of activation function for the final layer
+        classes=classes,
+        activation=activation,
+        # aux_params={'dropout':0.1, 'classes':classes, 'pooling':'avg', 'activation':activation},
         decoder_use_batchnorm=True
     )
     return model, preprocess_fn
