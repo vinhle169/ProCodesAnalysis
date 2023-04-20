@@ -60,7 +60,7 @@ class UnetLightning(pl.LightningModule):
 
 
 def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int = 1, gpus : int = 0,
-          checkpoint_location: str = None, in_chans = 4, out_chans = 4, activation = None):
+          checkpoint_location: str = None, metadata_path: str = None, in_chans = 4, out_chans = 4, activation = None):
     '''
     Training function for U-Net model
     :param data_paths: list of paths to train and truth folder, where train is first item and truth is second
@@ -85,7 +85,8 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
         unet_pl = UnetLightning(unet, learning_rate=0.0001)
     # Initialize data module for loading in data
     z = ProCodesDataModule(data_dir=data_path, batch_size=batch_size,
-                           test_size=.25, image_size=(256,256), in_memory=True, metadata=True)
+                           test_size=.25, image_size=(256,256), in_memory=True,
+                           metadata=True, load_metadata=metadata_path)
     train_loader = z.train_dataloader()
     print('number of training batches:', len(train_loader))
     val_loader = z.validation_dataloader()
@@ -99,11 +100,12 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
         save_on_train_epoch_end=True,
         dirpath=model_path,
         auto_insert_metric_name=False,
-        filename="UNET_22_test_{epoch:04d}",
+        filename="UNET_f16_{epoch:04d}",
     )
     # Set up the trainer function and begin training
-    trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback], benchmark=True,
-                      check_val_every_n_epoch=1, logger=logger, strategy="ddp_find_unused_parameters_false")
+    trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback],
+                      benchmark=True, check_val_every_n_epoch=1, logger=logger,
+                      strategy="ddp_find_unused_parameters_false", precision="16", accelerator="gpu")
     trainer.fit(unet_pl, train_dataloaders = train_loader, val_dataloaders = val_loader)
     print((time.time() - start) / 60, 'minutes to run')
 
@@ -117,11 +119,13 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size')
     parser.add_argument('--gpus')
     parser.add_argument('--checkpoint')
+    parser.add_argument('--metadata_path')
     args = parser.parse_args()
     batch_size = int(args.batch_size) if args.batch_size else 1
     epochs = int(args.epochs)
     model_path = args.model_path
+    metadata_path = args.metadata_path if args.metadata_path else None
     path = [args.train_path, args.label_path]
     gpus = int(args.gpus) if args.gpus else 1
     checkpoint = args.checkpoint if args.checkpoint else None
-    train(path, model_path, epochs, batch_size, gpus, checkpoint, in_chans=22, out_chans=22)
+    train(path, model_path, epochs, batch_size, gpus, checkpoint, metadata_path=metadata_path, in_chans=22, out_chans=22)
