@@ -43,7 +43,7 @@ def preprocess_with_skimage(img):
         io = cv2.resize(io, dsize=(256 * 2, 256 * 2), interpolation=cv2.INTER_AREA)
         # things will be saved as '{row}{col}':array
 
-        thresh = threshold_otsu(io) * 1.35
+        thresh = threshold_otsu(io) * 1.2
         bw = opening(io > thresh, square(3))
 
         # label image regions
@@ -65,7 +65,7 @@ def preprocess_with_skimage(img):
     return truths, labels
 
 
-def main(directory, paths, train_directory, resize=False):
+def main(directory, paths, train_directory, resize=False, gray_at_end=False):
     if resize:
         model = models.Cellpose(gpu=True, model_type='nuclei')
 
@@ -89,17 +89,21 @@ def main(directory, paths, train_directory, resize=False):
                 # now create our grayscale train data
                 grayscale = truth.mean(0)
                 train = np.zeros_like(truth).astype(np.float64)
-                for i in range(truth.shape[0]):
-                    train[i, :, :] = grayscale
                 nuclei = masks > 0
-                train[nuclei] = truth[nuclei]
+                if gray_at_end:
+                    train[nuclei] = truth[nuclei]
+                    train = torch.cat([i for i in train] + [grayscale], 0)
+                else:
+                    for i in range(truth.shape[0]):
+                        train[i, :, :] = grayscale
+                    train[nuclei] = truth[nuclei]
                 # convert to torch tensor for future training use
                 truth, masks, train = torch.from_numpy(truth).half(), torch.from_numpy(masks).half(), torch.from_numpy(train).half()
                 torch.save(truth, train_directory + f'truth/{p + "_" + filename[:-4]}.pt')
                 torch.save(train, train_directory + f'train/{p + "_" + filename[:-4]}.pt')
                 torch.save(masks, train_directory + f'masks/{p + "_" + filename[:-4]}.pt')
             else:
-                patches_truth, patches_mask, patches_train = {}, {}, {}
+                patches_truth, patches_train = {}, {}
                 truth, mask = preprocess_with_skimage(img)
                 del img
                 # cut up images into patches
@@ -110,22 +114,23 @@ def main(directory, paths, train_directory, resize=False):
                         patch_tru = truth[:, i:i+256, j:j+256]
                         patch_mask = mask[:, i:i+256, j:j+256]
                         patches_truth[file_prefix] = patch_tru
-                        patches_mask[file_prefix] = patch_mask
                         grayscale = patch_tru.mean(0)
                         patch_tra = np.zeros_like(patch_tru).astype(np.float64)
-                        for k in range(patch_tra.shape[0]):
-                            patch_tra[k, :, :] = grayscale
                         nuclei = patch_mask > 0
-                        patch_tra[nuclei] = patch_tru[nuclei]
+                        if gray_at_end:
+                            patch_tra[nuclei] = patch_tru[nuclei]
+                            patch_tra = np.stack([i for i in patch_tra] + [grayscale], 0)
+                        else:
+                            for k in range(patch_tra.shape[0]):
+                                patch_tra[k, :, :] = grayscale
+                            patch_tra[nuclei] = patch_tru[nuclei]
                         patches_train[file_prefix] = patch_tra
                 for f_prefix in list(patches_truth.keys()):
                     # convert to torch tensor for future training use
-                    truth, masks, train = torch.from_numpy(patches_truth[f_prefix]).half(), \
-                                          torch.from_numpy(patches_mask[f_prefix]).half(), \
+                    truth, train = torch.from_numpy(patches_truth[f_prefix]).half(), \
                                           torch.from_numpy(patches_train[f_prefix]).half()
                     torch.save(truth, train_directory + f'truth/{p + "_" + f_prefix + "_" + filename[:-4]}.pt')
                     torch.save(train, train_directory + f'train/{p + "_" + f_prefix + "_" + filename[:-4]}.pt')
-                    torch.save(masks, train_directory + f'masks/{p + "_" + f_prefix + "_" + filename[:-4]}.pt')
         print(f'finished {path}')
 
 
@@ -134,5 +139,5 @@ if __name__ == '__main__':
     directory = '/nobackup/users/vinhle/data/procodes_data/unet_train/original_data/coverslip'
     paths = ['1', '2', '3', '4', '5']
     # paths = ['3','4','5']
-    train_directory = '/nobackup/users/vinhle/data/procodes_data/unet_train/'
-    main(directory, paths, train_directory)
+    train_directory = '/nobackup/users/vinhle/data/procodes_data/unet_train/23chan/'
+    main(directory, paths, train_directory, gray_at_end=True)
