@@ -13,7 +13,7 @@ from torch.nn import functional as F
 from torchvision.utils import save_image
 import segmentation_models_pytorch as smp
 from segmentation_models_pytorch.encoders import get_preprocessing_fn
-
+from segmentation_models_pytorch.encoders._base import EncoderMixin
 # Building block unit of encoder and decoder architecture
 class Block(Module):
     def __init__(self, inChannels, outChannels, dropout = 0.15):
@@ -119,8 +119,9 @@ class UNet(Module):
             out = F.interpolate(out, self.out_sz).clamp(min=0, max=1)
         return out
 
+
 def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=3,
-                      activation=None, preprocess_only=False):
+                      activation=None, preprocess_only=False, plus=False, decoder_channels=[256,128,64,32,16]):
     '''
 
     :param encoder_name: type of encoder to use
@@ -138,15 +139,28 @@ def create_pretrained(encoder_name='resnet34', encoder_weights='imagenet', in_ch
         preprocess_fn = get_preprocessing_fn(encoder_name, pretrained=encoder_weights)
         if preprocess_only:
             return preprocess_fn
-    model = smp.Unet(
-        encoder_name=encoder_name,  # resnet34 resnet50
-        encoder_weights=encoder_weights,  # use 'imagenet' 'swsl'
-        in_channels=in_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
-        classes=classes,
-        activation=activation,
-        # aux_params={'dropout':0.1, 'classes':classes, 'pooling':'avg', 'activation':activation},
-        decoder_use_batchnorm=True
-    )
+    if plus:
+        model = smp.UnetPlusPlus(
+            encoder_name=encoder_name,  # resnet34 resnet50
+            encoder_weights=encoder_weights,  # use 'imagenet' 'swsl'
+            in_channels=in_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
+            classes=classes,
+            activation=activation,
+            # aux_params={'dropout':0.1, 'classes':classes, 'pooling':'avg', 'activation':activation},
+            decoder_use_batchnorm=True
+        )
+    else:
+        model = smp.Unet(
+            encoder_name=encoder_name,  # resnet34 resnet50
+            encoder_weights=encoder_weights,  # use 'imagenet' 'swsl'
+            in_channels=in_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
+            classes=classes,
+            activation=activation,
+            encoder_depth=5,
+            decoder_channels=decoder_channels,
+            # aux_params={'dropout':0.1, 'classes':classes, 'pooling':'avg', 'activation':activation},
+            decoder_use_batchnorm=True
+        )
     return model, preprocess_fn
 
 
