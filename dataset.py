@@ -34,7 +34,7 @@ class ProCodes(torch.utils.data.Dataset):
             print("Loading in Training Target Output Images")
             path_y = torch.stack([torch.load(i) for i in paths[1]])
             print(f"{path_x.shape[0]} samples loaded")
-            self.paths = torch.stack([path_x,path_y])
+            self.paths = [path_x,path_y]
         else:
             self.paths = paths
         self.in_memory = in_memory
@@ -56,12 +56,12 @@ class ProCodes(torch.utils.data.Dataset):
             inp, mask = torch.load(inp), torch.load(mask)
         if self.transforms:
             inp = self.transforms(inp)
-        if self.image_size:
-            padder = transforms.Pad([0,0,self.image_size[-1]-inp.shape[-1], self.image_size[-2]-inp.shape[-2]], padding_mode='edge')
-            inp = padder(inp)
-            mask = padder(mask)
-        inp = inp.clone().detach().type(torch.float16)
-        mask = mask.clone().detach().type(torch.float16)
+        # if self.image_size:
+        #     padder = transforms.Pad([0,0,self.image_size[-1]-inp.shape[-1], self.image_size[-2]-inp.shape[-2]], padding_mode='edge')
+        #     inp = padder(inp)
+        #     mask = padder(mask)
+        # inp = inp.clone().detach().type(torch.float16)
+        # mask = mask.clone().detach().type(torch.float16)
         # size = inp.size()
         # inp = inp.view((4, size, size))
         # mask = mask.view((4, size, size))
@@ -151,7 +151,7 @@ class ProCodesDataModule(pl.LightningDataModule):
             self.test = ProCodes([self.xtest, self.ytest], image_size=self.image_size)
         if stage in (None, "fit"):
             self.train = ProCodes([self.xtrain, self.ytrain], image_size=self.image_size, transform=self.transform, in_memory=in_memory)
-            self.val = ProCodes([self.xval, self.yval], image_size=self.image_size, transform=self.transform)
+            self.val = ProCodes([self.xval, self.yval], image_size=self.image_size, transform=self.transform, in_memory=in_memory)
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train, batch_size=self.batch_size)
