@@ -1,5 +1,6 @@
 import time
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
@@ -9,6 +10,20 @@ from dataset import ProCodesDataModule
 import argparse
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import WandbLogger
+
+###### TODO
+### add wandb, add classification accuracy
+def classification_accuracy(img, label, mask_over_zero):
+    # Get the "classifications" of each pixel
+    img_max = img.max(axis=1, keepdim=True).indices
+    label_max = label.max(axis=1, keepdim=True).indices
+    # Check which pixels match between img and label
+    acc = img_max == label_max
+    # Compute accuracy
+    acc = acc.float()
+    acc *= mask_over_zero.float()
+    return torch.sum(acc)/torch.sum(mask_over_zero)
 
 
 class UnetLightning(pl.LightningModule):
@@ -16,20 +31,23 @@ class UnetLightning(pl.LightningModule):
         super().__init__()
         self.model = unet
         # self.loss_fn = nn.MSELoss(reduction='mean')
-        # need this to load trainable model again
         self.loss_fn = nn.L1Loss(reduction='mean')
+        self.mse = nn.MSELoss(reduction='mean')
         self.learning_rate = learning_rate
         self.running_loss = 0
         self.running_val_loss = 0
         self.num_batches = 0
         self.num_batches_val = 0
+        # need this to load trainable model again
+        self.save_hyperparameters()
 
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self.model(x)
         loss = self.loss_fn(y_hat, y)
-        self.log_dict({"Loss": loss, "step": self.current_epoch + 1})
+        # self.log_dict({"Loss": loss, "step": self.current_epoch + 1})
+        self.log("L1 Loss", loss, on_step=False, on_epoch=True)
         return loss
 
     # def on_epoch_end(self):
@@ -52,7 +70,30 @@ class UnetLightning(pl.LightningModule):
         x, y = batch
         y_hat = self.model(x)
         val_loss = self.loss_fn(y_hat, y)
-        self.log_dict({"Validation Loss": val_loss, "step": self.current_epoch + 1})
+        val_mse = self.mse(y_hat, y)
+
+        # code to get just the non-zero values of the prediction and truth
+        pred_numpy = y_hat.clone().detach().cpu().numpy()
+        truth_numpy = y.clone().detach().cpu().numpy()
+        truth_mask = truth_numpy > 0
+        pred_np = np.zeros_like(pred_numpy)
+        pred_np[truth_mask] = pred_numpy[truth_mask]
+        pred_nonzero = torch.from_numpy(pred_np).to('cuda:0')
+
+        nonzero_loss = self.loss_fn(pred_nonzero, y)
+        nonzero_mse = self.mse(pred_nonzero, y)
+
+        # tensorboard logging
+        # self.log_dict({"Validation Loss": val_loss, "step": self.current_epoch + 1})
+        # self.log_dict({"Validation MSE": val_mse, "step": self.current_epoch + 1})
+        # self.log_dict({"Validation Non-zero Loss": nonzero_loss, "step": self.current_epoch + 1})
+        # self.log_dict({"Validation Non-zero MSE": nonzero_mse, "step": self.current_epoch + 1})
+
+        # wandb logging
+        self.log("Validation L1Loss", val_loss, on_step=False, on_epoch=True)
+        self.log("Validation MSE", val_mse, on_step=False, on_epoch=True)
+        self.log("Validation Non-zero L1Loss", nonzero_loss, on_step=False, on_epoch=True)
+        self.log("Validation Non-zero MSE", nonzero_mse, on_step=False, on_epoch=True)
 
     def predict(self, x):
         pred = self.model(x)
@@ -79,32 +120,33 @@ def train(data_path : list, model_path : str, epochs : int = 1, batch_size : int
     unet, _ = create_pretrained('resnet34', None, in_channels=in_chans, classes=out_chans, activation="sigmoid")
     if checkpoint_location:
         # checkpoint = torch.load(checkpoint_location)
-        unet_pl = UnetLightning(unet, learning_rate=0.0001)
+        unet_pl = UnetLightning(unet, learning_rate=0.00015)
         unet_pl = unet_pl.load_from_checkpoint(unet=unet, checkpoint_path=checkpoint_location)
     else:
-        unet_pl = UnetLightning(unet, learning_rate=0.0001)
+        unet_pl = UnetLightning(unet, learning_rate=0.00015)
     # Initialize data module for loading in data
     z = ProCodesDataModule(data_dir=data_path, batch_size=batch_size,
-                           test_size=.25, image_size=(256,256), in_memory=True,
+                           test_size=.3, image_size=(256,256), in_memory=True,
                            metadata=True, load_metadata=metadata_path)
     train_loader = z.train_dataloader()
     print('number of training batches:', len(train_loader))
     val_loader = z.validation_dataloader()
     print('number of validation batches:', len(val_loader))
     # Setup logger to track metrics for training over time
-    logger = TensorBoardLogger("runs/", name="unet_procodes")
+    # logger = TensorBoardLogger("runs/", name="unet_tuning")
+    wandb = WandbLogger(project='UNET-Thesis', name='UNET_23channel',save_dir='wandb_runs/')
     checkpoint_callback = ModelCheckpoint(
-        monitor="Validation Loss",
-        every_n_epochs=10,
-        save_top_k=5,
-        save_on_train_epoch_end=True,
+        monitor="Validation Non-zero L1Loss",
+        every_n_epochs=50,
+        save_top_k=-1,
+        save_on_train_epoch_end=False,
         dirpath=model_path,
         auto_insert_metric_name=False,
-        filename="UNET_f16_{epoch:04d}",
+        filename="UNET_f16_tune_1gray_{epoch:04d}",
     )
     # Set up the trainer function and begin training
     trainer = Trainer(gpus=gpus, max_epochs=epochs, deterministic=True, callbacks=[checkpoint_callback],
-                      benchmark=True, check_val_every_n_epoch=1, logger=logger,
+                      benchmark=True, check_val_every_n_epoch=3, logger=wandb,
                       strategy="ddp_find_unused_parameters_false", precision="16", accelerator="gpu")
     trainer.fit(unet_pl, train_dataloaders = train_loader, val_dataloaders = val_loader)
     print((time.time() - start) / 60, 'minutes to run')
@@ -128,4 +170,4 @@ if __name__ == '__main__':
     path = [args.train_path, args.label_path]
     gpus = int(args.gpus) if args.gpus else 1
     checkpoint = args.checkpoint if args.checkpoint else None
-    train(path, model_path, epochs, batch_size, gpus, checkpoint, metadata_path=metadata_path, in_chans=22, out_chans=22)
+    train(path, model_path, epochs, batch_size, gpus, checkpoint, metadata_path=metadata_path, in_chans=23, out_chans=22)
